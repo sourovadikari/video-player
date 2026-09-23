@@ -4,6 +4,7 @@ import "./globals.css";
 import "../components/media-player/media-player.css";
 import "../components/media-player/player-tuning.css";
 import "../components/media-player/player-final.css";
+import "../components/media-player/player-polish.css";
 
 const display = Space_Grotesk({
   variable: "--font-display",
