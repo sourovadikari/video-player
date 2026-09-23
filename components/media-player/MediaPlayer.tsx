@@ -1,89 +1,451 @@
 "use client";
-/* eslint-disable react-hooks/refs, react-hooks/immutability */
 
-import { createPortal } from "react-dom";
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { MediaPlayerControls, MediaPlayerError, MediaPlayerProps, MediaPlayerRef, MediaPlayerState, MediaSource } from "@/types/media-player";
+import { ArrowLeft, Captions, Check, ChevronRight, ChevronsLeft, ChevronsRight, Gauge, Maximize, Minimize, Pause, PictureInPicture2, Play, Settings, SkipBack, SkipForward, SlidersHorizontal, Volume1, Volume2, VolumeX, X } from "lucide-react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import type { MediaPlayerControls, MediaPlayerError, MediaPlayerProps, MediaPlayerRef, MediaPlayerState, MediaSource, MediaTrack } from "@/types/media-player";
 
-const defaultRates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-const sourceValue = (source: MediaSource) => typeof source === "string" ? source : source.src;
-const formatTime = (value: number) => !Number.isFinite(value) ? "0:00" : `${Math.floor(value / 60)}:${Math.floor(value % 60).toString().padStart(2, "0")}`;
+const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const DEFAULT_QUALITY = "Default";
+const HIDE_DELAY = 2800;
+const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
+
+type LockableOrientation = ScreenOrientation & { lock?: (orientation: "landscape") => Promise<void>; unlock?: () => void };
+type Drag = "seek" | "volume" | null;
+
+const sourceValue = (source: MediaSource) => (typeof source === "string" ? source : source.src);
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+const safeDuration = (value: number) => (Number.isFinite(value) && value > 0 ? value : 0);
+const formatRate = (rate: number) => `${rate}x`;
 const isEditable = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+const isButton = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest("button"));
 
-type IconName = "play" | "pause" | "volume-low" | "volume-medium" | "volume-high" | "mute" | "settings" | "fullscreen" | "compress" | "pip" | "captions" | "back" | "chevron" | "close" | "skip-back" | "skip-forward" | "more" | "music";
-const Icon = ({ name, size = 20 }: { name: IconName; size?: number }) => {
-  const paths: Record<IconName, ReactNode> = {
-    play: <path d="m8 5 11 7-11 7V5Z" />, pause: <><path d="M7 5h3v14H7z" /><path d="M14 5h3v14h-3z" /></>,
-    "volume-low": <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="M15 10a3 3 0 0 1 0 4" /></>, "volume-medium": <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="M15 9a4 4 0 0 1 0 6m3-8a8 8 0 0 1 0 10" /></>, "volume-high": <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="M15 9a4 4 0 0 1 0 6m3-8a8 8 0 0 1 0 10" /></>, mute: <><path d="M4 10v4h3l4 3V7l-4 3H4Z" /><path d="m16 10 4 4m0-4-4 4" /></>,
-    settings: <><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z" /><path d="m19 13 .1-1-.1-1 2-1.5-2-3.5-2.3 1a8 8 0 0 0-1.7-1L15 3H9l.2 3a8 8 0 0 0-1.7 1l-2.3-1-2 3.5L5.2 11a8 8 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a8 8 0 0 0 1.7 1L9 21h6l-.2-3a8 8 0 0 0 1.7-1l2.3 1 2-3.5L19 13Z" /></>,
-    fullscreen: <><path d="M8 3H3v5m13-5h5v5M8 21H3v-5m18 0v5h-5" /></>, compress: <><path d="M9 3v6H3m12-6v6h6M9 21v-6H3m12 6v-6h6" /></>,
-    pip: <><path d="M3 5h18v14H3z" /><path d="M12 13h7v4h-7z" /></>, captions: <><path d="M3 5h18v14H3z" /><path d="M6 12h5m2 0h5M6 15h3m2 0h4" /></>,
-    back: <path d="m15 18-6-6 6-6" />, chevron: <path d="m9 6 6 6-6 6" />, close: <path d="m6 6 12 12m0-12L6 18" />, "skip-back": <><path d="M5 5v14" /><path d="m18 6-8 6 8 6V6Z" /><path d="m11 6-8 6 8 6" /></>, "skip-forward": <><path d="M19 5v14" /><path d="m6 6 8 6-8 6V6Z" /><path d="m13 6 8 6-8 6" /></>,
-    more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>, music: <><path d="M9 18V5l10-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="16" cy="16" r="3" /></>,
-  };
-  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
-};
+function formatTime(value: number) {
+  const total = Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = (total % 60).toString().padStart(2, "0");
+  return hours > 0 ? `${hours}:${minutes.toString().padStart(2, "0")}:${seconds}` : `${minutes}:${seconds}`;
+}
+
+/** End of the buffered range that contains `time`; falls back to `time` when nothing is buffered there. */
+function bufferedEnd(media: HTMLVideoElement, time: number) {
+  const ranges = media.buffered;
+  for (let index = 0; index < ranges.length; index += 1) if (ranges.start(index) <= time + 0.5 && ranges.end(index) >= time) return ranges.end(index);
+  return time;
+}
+
+const subscribeTouch = (notify: () => void) => { const query = window.matchMedia(TOUCH_QUERY); query.addEventListener("change", notify); return () => query.removeEventListener("change", notify); };
+const useIsTouch = () => useSyncExternalStore(subscribeTouch, () => window.matchMedia(TOUCH_QUERY).matches, () => false);
+const noopSubscribe = () => () => undefined;
+const usePictureInPictureSupport = () => useSyncExternalStore(noopSubscribe, () => Boolean(document.pictureInPictureEnabled), () => false);
+
+function IconButton({ label, onClick, active = false, className = "", children }: { label: string; onClick: () => void; active?: boolean; className?: string; children: ReactNode }) {
+  return <button type="button" className={`player-button ${active ? "is-active" : ""} ${className}`} onClick={onClick} aria-label={label} title={label}>{children}</button>;
+}
+
+/** Reports whether a caption file really loaded, so CC only renders for captions that exist. */
+function CaptionTrack({ track, onStatus }: { track: MediaTrack; onStatus: (src: string, ok: boolean) => void }) {
+  const ref = useRef<HTMLTrackElement>(null);
+  const { src, srcLang, label, kind = "subtitles" } = track;
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const loaded = () => onStatus(src, true);
+    const failed = () => onStatus(src, false);
+    element.addEventListener("load", loaded);
+    element.addEventListener("error", failed);
+    if (element.readyState === 2) loaded();
+    else if (element.readyState === 3) failed();
+    return () => { element.removeEventListener("load", loaded); element.removeEventListener("error", failed); };
+  }, [src, onStatus]);
+  return <track ref={ref} src={src} srcLang={srcLang} label={label} kind={kind} />;
+}
 
 export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function MediaPlayer({
-  type, src, poster, artwork, preload = "metadata", autoplay = false, muted = false, loop = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = defaultRates, seekStep = 10, keyboardShortcuts = true, mediaSession, className = "", accent = "#c8f169", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
+  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
 }, ref) {
-  const mediaRef = useRef<HTMLMediaElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
-  const [state, setState] = useState<MediaPlayerState>({ playing: false, currentTime: 0, duration: 0, volume: 1, muted, buffered: 0, buffering: false, fullscreen: false, pictureInPicture: false, playbackRate: 1, quality: quality[0]?.label, captionsEnabled: false, controlsVisible: true });
-  const [menu, setMenu] = useState<"main" | "speed" | "quality" | null>(null);
-  const [volumeOpen, setVolumeOpen] = useState(false);
-  const [seekFeedback, setSeekFeedback] = useState<"back" | "forward" | null>(null);
-  const [notice, setNotice] = useState("");
-  const [settingsPosition, setSettingsPosition] = useState({ top: 12, left: 12 });
-  const [volumePosition, setVolumePosition] = useState({ top: 12, left: 12 });
-  const showControls = state.controlsVisible;
-  const config: Required<MediaPlayerControls> = { play: true, volume: true, progress: true, captions: captions.length > 0, settings: playbackRate || quality.length > 1, fullscreen: type === "video", pictureInPicture: type === "video", ...(typeof controls === "object" ? controls : {}) };
-  const hasControls = controls !== false;
+  const mediaRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<number | undefined>(undefined);
+  const feedbackTimer = useRef<number | undefined>(undefined);
+  const holdRef = useRef(false);
+  const previousVolume = useRef(1);
+  const resumeRef = useRef<{ time: number; playing: boolean } | null>(null);
+  const tapRef = useRef<{ time: number; x: number; chainUntil: number; side: "back" | "forward" | null }>({ time: 0, x: 0, chainUntil: 0, side: null });
+  const latest = useRef({ onFullscreenChange, onCaptionChange, onSeek, onQualityChange, onProgress, onTimeUpdate });
+  const isTouch = useIsTouch();
+  const pictureInPictureSupported = usePictureInPictureSupport();
+  const touchRef = useRef(isTouch);
+
   const sourceKey = sourceValue(src);
-  const qualityKey = quality.map((item) => item.label).join("|");
-  const initialQuality = quality[0]?.label;
-  const positionSettings = () => { const button = settingsButtonRef.current; if (!button) return; const rect = button.getBoundingClientRect(); const width = Math.min(280, window.innerWidth - 24); const below = rect.bottom + 8; const top = below + 360 <= window.innerHeight - 12 ? below : Math.max(12, rect.top - 368); const left = Math.min(Math.max(12, rect.right - width), window.innerWidth - width - 12); setSettingsPosition({ top, left }); };
-  const positionVolume = () => { const player = containerRef.current; if (!player) return; const rect = player.getBoundingClientRect(); setVolumePosition({ top: Math.max(12, rect.top + 12), left: rect.left + rect.width / 2 }); };
-  const setError = (error: MediaPlayerError) => { setState((current) => ({ ...current, error, buffering: false, playing: false })); onError?.(error); };
-  const play = async () => { try { await mediaRef.current?.play(); } catch (error) { setError({ message: error instanceof Error ? error.message : "Playback was blocked by the browser." }); } };
+  const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
+  const [state, setState] = useState<MediaPlayerState>({ playing: false, currentTime: 0, duration: 0, volume: 1, muted, buffered: 0, buffering: false, fullscreen: false, pictureInPicture: false, playbackRate: 1, quality: quality.length > 0 ? DEFAULT_QUALITY : undefined, captionsEnabled: captions.some((track) => track.default), controlsVisible: true });
+  const [menu, setMenu] = useState<"main" | "speed" | "quality" | null>(null);
+  const [dragging, setDragging] = useState<Drag>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [qualityLabel, setQualityLabel] = useState(DEFAULT_QUALITY);
+  const [seekFeedback, setSeekFeedback] = useState<{ side: "back" | "forward"; id: number } | null>(null);
+  const [notice, setNotice] = useState("");
+  const [captionStatus, setCaptionStatus] = useState<Record<string, boolean>>({});
+
+  const patch = useCallback((next: Partial<MediaPlayerState>) => setState((current) => (Object.keys(next) as (keyof MediaPlayerState)[]).some((key) => !Object.is(current[key], next[key])) ? { ...current, ...next } : current), []);
+
+  // A new source starts a new playback session (state reset during render, not in an effect).
+  if (prevSourceKey !== sourceKey) {
+    setPrevSourceKey(sourceKey);
+    setMenu(null);
+    setHasLoaded(false);
+    setQualityLabel(DEFAULT_QUALITY);
+    setState((current) => ({ ...current, currentTime: 0, duration: 0, buffered: 0, playing: false, buffering: false, quality: quality.length > 0 ? DEFAULT_QUALITY : undefined, error: undefined }));
+  }
+
+  // Quality is only offered when the caller supplies REAL alternative sources. A single MP4 has exactly one
+  // encoded resolution, so listing 360p/720p/1080p for it would be fake; real switching needs several files or HLS/DASH.
+  const hasQuality = quality.length > 0;
+  const speedOptions = playbackRate ? playbackRates : [];
+  const hasSettings = speedOptions.length > 0 || hasQuality;
+  const readyCaptions = captions.filter((track) => captionStatus[track.src] === true);
+  const overrides: MediaPlayerControls = typeof controls === "object" ? controls : {};
+  const config: Required<MediaPlayerControls> = {
+    play: overrides.play ?? true,
+    volume: (overrides.volume ?? true) && !isTouch,
+    progress: overrides.progress ?? true,
+    captions: (overrides.captions ?? true) && readyCaptions.length > 0,
+    settings: (overrides.settings ?? true) && hasSettings,
+    fullscreen: overrides.fullscreen ?? true,
+    pictureInPicture: (overrides.pictureInPicture ?? true) && pictureInPictureSupported && !isTouch,
+  };
+  const hasControls = controls !== false;
+  const activeSource = qualityLabel === DEFAULT_QUALITY ? src : quality.find((item) => item.label === qualityLabel)?.src ?? src;
+  const hold = !state.playing || menu !== null || dragging !== null || Boolean(state.error);
+  const controlsVisible = hold || state.controlsVisible;
+  const loading = !state.error && (!hasLoaded || state.buffering);
+
+  useEffect(() => { latest.current = { onFullscreenChange, onCaptionChange, onSeek, onQualityChange, onProgress, onTimeUpdate }; });
+  useEffect(() => { touchRef.current = isTouch; }, [isTouch]);
+  useEffect(() => { holdRef.current = hold; }, [hold]);
+
+  // ---- controls auto-hide (one timer, no state churn on every pointer move) ----
+  const clearHideTimer = () => { if (hideTimer.current) window.clearTimeout(hideTimer.current); hideTimer.current = undefined; };
+  const scheduleHide = useCallback(() => {
+    if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    hideTimer.current = window.setTimeout(() => { if (!holdRef.current) patch({ controlsVisible: false }); }, HIDE_DELAY);
+  }, [patch]);
+  const wake = useCallback(() => { patch({ controlsVisible: true }); scheduleHide(); }, [patch, scheduleHide]);
+  useEffect(() => () => { clearHideTimer(); if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current); }, []);
+  const changeMenu = useCallback((next: "main" | "speed" | "quality" | null) => { setMenu(next); wake(); }, [wake]);
+
+  // ---- media -> state (one function feeds every time/buffer event) ----
+  const syncMedia = (force = false) => {
+    const media = mediaRef.current;
+    if (!media || (dragging === "seek" && !force)) return;
+    const duration = safeDuration(media.duration);
+    const currentTime = duration > 0 ? clamp(media.currentTime, 0, duration) : clamp(media.currentTime, 0, Number.MAX_SAFE_INTEGER);
+    const buffered = duration > 0 ? clamp(bufferedEnd(media, currentTime) / duration, 0, 1) : 0;
+    patch({ currentTime, duration, buffered });
+  };
+
+  // ---- imperative API ----
+  const play = async () => {
+    try { await mediaRef.current?.play(); } catch (error) {
+      const name = error instanceof DOMException ? error.name : "";
+      if (name === "AbortError") return; // interrupted by pause()/load(): not a failure
+      if (name === "NotAllowedError") { setNotice("Playback was blocked by the browser."); return; }
+      raiseError({ message: error instanceof Error ? error.message : "Playback failed." });
+    }
+  };
   const pause = () => mediaRef.current?.pause();
-  const togglePlay = () => mediaRef.current?.paused ? play() : (pause(), Promise.resolve());
-  const seek = (time: number) => { if (!mediaRef.current) return; const next = Math.max(0, Math.min(time, mediaRef.current.duration || time)); mediaRef.current.currentTime = next; onSeek?.(next); };
-  const setVolume = (volume: number) => { if (!mediaRef.current) return; mediaRef.current.volume = volume; mediaRef.current.muted = volume === 0; };
-  const toggleMute = () => { if (mediaRef.current) mediaRef.current.muted = !mediaRef.current.muted; };
-  const setPlaybackRate = (rate: number) => { if (mediaRef.current) mediaRef.current.playbackRate = rate; };
-  const requestFullscreen = async () => { if (!containerRef.current?.requestFullscreen) { setNotice("Fullscreen is not supported in this browser."); return; } try { await containerRef.current.requestFullscreen(); const orientation = screen.orientation as ScreenOrientation & { lock?: (orientation: string) => Promise<void> }; if (orientation.lock) await orientation.lock("landscape").catch(() => undefined); } catch { setNotice("Fullscreen could not be started in this browser."); } };
-  const exitFullscreen = async () => { try { if (document.fullscreenElement) await document.exitFullscreen(); } catch { setNotice("Fullscreen could not be closed."); } finally { if (screen.orientation?.unlock) screen.orientation.unlock(); } };
-  const enterPictureInPicture = async () => { const video = mediaRef.current as HTMLVideoElement | null; if (!video || !("requestPictureInPicture" in video)) { setNotice("Picture-in-Picture is not supported in this browser."); return; } try { await video.requestPictureInPicture(); } catch { setNotice("Picture-in-Picture is not available right now."); } };
-  const exitPictureInPicture = async () => { if (document.pictureInPictureElement) await document.exitPictureInPicture(); };
-  useImperativeHandle(ref, () => ({ play, pause, togglePlay, seek, setVolume, toggleMute, setPlaybackRate, requestFullscreen, exitFullscreen, enterPictureInPicture, exitPictureInPicture, getState: () => state }));
-  useEffect(() => { if (mediaRef.current) { mediaRef.current.volume = state.volume; mediaRef.current.muted = state.muted; } }, [state.muted, state.volume]);
-  useEffect(() => { const onFullscreen = () => { const fullscreen = Boolean(document.fullscreenElement); setState((current) => ({ ...current, fullscreen })); if (!fullscreen && screen.orientation?.unlock) screen.orientation.unlock(); onFullscreenChange?.(fullscreen); }; document.addEventListener("fullscreenchange", onFullscreen); return () => document.removeEventListener("fullscreenchange", onFullscreen); }, [onFullscreenChange]);
-  useEffect(() => { if (!mediaSession || !("mediaSession" in navigator)) return; navigator.mediaSession.metadata = new MediaMetadata(mediaSession); (["play", "pause", "seekbackward", "seekforward"] as MediaSessionAction[]).forEach((action) => { try { navigator.mediaSession.setActionHandler(action, action === "play" ? play : action === "pause" ? pause : () => seek((mediaRef.current?.currentTime ?? 0) + (action === "seekforward" ? seekStep : -seekStep))); } catch { /* unsupported action */ } }); return () => (["play", "pause", "seekbackward", "seekforward"] as MediaSessionAction[]).forEach((action) => { try { navigator.mediaSession.setActionHandler(action, null); } catch { /* unsupported action */ } }); }, [mediaSession, seekStep]);
+  const togglePlay = () => (mediaRef.current?.paused ? play() : (pause(), Promise.resolve()));
+  const seek = (time: number) => {
+    const media = mediaRef.current;
+    if (!media) return;
+    const duration = safeDuration(media.duration);
+    const next = duration > 0 ? clamp(time, 0, duration) : clamp(time, 0, Number.MAX_SAFE_INTEGER);
+    media.currentTime = next;
+    patch({ currentTime: next });
+    latest.current.onSeek?.(next);
+  };
+  const seekBy = (delta: number) => seek((mediaRef.current?.currentTime ?? 0) + delta);
+  const setVolume = (volume: number) => { const media = mediaRef.current; if (!media) return; const next = clamp(volume, 0, 1); if (next > 0) previousVolume.current = next; media.volume = next; media.muted = next === 0; };
+  const toggleMute = () => { const media = mediaRef.current; if (!media) return; if (media.muted || media.volume === 0) { media.volume = previousVolume.current || 1; media.muted = false; } else { previousVolume.current = media.volume; media.muted = true; } };
+  const setPlaybackRate = (rate: number) => { const media = mediaRef.current; if (!media) return; media.defaultPlaybackRate = rate; media.playbackRate = rate; }; // defaultPlaybackRate survives load()/source switches
+  const requestFullscreen = async () => {
+    const player = playerRef.current;
+    const video = mediaRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+    try {
+      if (player?.requestFullscreen) await player.requestFullscreen();
+      else if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen(); // iOS Safari: only the <video> can go fullscreen
+      else setNotice("Fullscreen is not supported in this browser.");
+    } catch { setNotice("Fullscreen could not be started in this browser."); }
+  };
+  const exitFullscreen = async () => { if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined); };
+  const enterPictureInPicture = async () => { try { await mediaRef.current?.requestPictureInPicture(); } catch { setNotice("Picture-in-Picture is not available."); } };
+  const exitPictureInPicture = async () => { if (document.pictureInPictureElement) await document.exitPictureInPicture().catch(() => undefined); };
+  useImperativeHandle(ref, () => ({ play, pause, togglePlay, seek, setVolume, toggleMute, setPlaybackRate, requestFullscreen, exitFullscreen, enterPictureInPicture, exitPictureInPicture, getState: () => ({ ...state, controlsVisible }) }));
+
+  function raiseError(error: MediaPlayerError) { setHasLoaded(true); patch({ error, buffering: false, playing: false }); onError?.(error); }
+
+  // ---- fullscreen: orientation lock/unlock is tied to the real fullscreenchange, so Esc / back gesture also unlock ----
+  useEffect(() => {
+    const onChange = () => {
+      const fullscreen = document.fullscreenElement === playerRef.current;
+      patch({ fullscreen });
+      latest.current.onFullscreenChange?.(fullscreen);
+      const orientation = screen.orientation as LockableOrientation | undefined;
+      try {
+        if (fullscreen && touchRef.current) void orientation?.lock?.("landscape")?.catch(() => undefined);
+        else if (!fullscreen) orientation?.unlock?.();
+      } catch { /* Orientation lock is unsupported (desktop, iOS). Fullscreen still works. */ }
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, [patch]);
+
+  // ---- keep the desktop settings menu inside small players (CSS cannot read the player's own height) ----
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => player.style.setProperty("--player-h", `${entry.contentRect.height}px`));
+    observer.observe(player);
+    return () => observer.disconnect();
+  }, []);
+
+  // ---- picture-in-picture state ----
+  useEffect(() => {
+    const media = mediaRef.current;
+    if (!media) return;
+    const enter = () => patch({ pictureInPicture: true });
+    const leave = () => patch({ pictureInPicture: false });
+    media.addEventListener("enterpictureinpicture", enter);
+    media.addEventListener("leavepictureinpicture", leave);
+    return () => { media.removeEventListener("enterpictureinpicture", enter); media.removeEventListener("leavepictureinpicture", leave); };
+  }, [patch]);
+
+  // ---- media session ----
+  useEffect(() => {
+    if (!mediaSession || !("mediaSession" in navigator)) return;
+    navigator.mediaSession.metadata = new MediaMetadata(mediaSession);
+    const actions: MediaSessionAction[] = ["play", "pause", "seekbackward", "seekforward"];
+    const handlers: Record<string, () => void> = { play: () => void mediaRef.current?.play(), pause: () => mediaRef.current?.pause(), seekbackward: () => seekBy(-seekStep), seekforward: () => seekBy(seekStep) };
+    actions.forEach((action) => { try { navigator.mediaSession.setActionHandler(action, handlers[action]); } catch { /* Unsupported action. */ } });
+    return () => actions.forEach((action) => { try { navigator.mediaSession.setActionHandler(action, null); } catch { /* Unsupported action. */ } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaSession, seekStep]);
+
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 2600); return () => window.clearTimeout(timer); }, [notice]);
-  useEffect(() => { if (!menu) return; positionSettings(); const onResize = () => positionSettings(); const onPointerDown = (event: PointerEvent) => { const target = event.target as Node; if (!(target instanceof Element && target.closest(".external-media-menu")) && target !== settingsButtonRef.current && !settingsButtonRef.current?.contains(target)) setMenu(null); }; const onDocumentKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setMenu(null); }; window.addEventListener("resize", onResize); window.addEventListener("scroll", onResize, true); document.addEventListener("pointerdown", onPointerDown); document.addEventListener("keydown", onDocumentKeyDown); return () => { window.removeEventListener("resize", onResize); window.removeEventListener("scroll", onResize, true); document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onDocumentKeyDown); }; }, [menu]);
-  useEffect(() => { if (!volumeOpen) return; positionVolume(); const onResize = () => positionVolume(); window.addEventListener("resize", onResize); window.addEventListener("scroll", onResize, true); return () => { window.removeEventListener("resize", onResize); window.removeEventListener("scroll", onResize, true); }; }, [volumeOpen]);
-  useEffect(() => { const timer = window.setTimeout(() => { setMenu(null); setVolumeOpen(false); setState((current) => ({ ...current, currentTime: 0, duration: 0, buffered: 0, playing: false, quality: initialQuality, captionsEnabled: false, error: undefined })); const tracks = mediaRef.current?.textTracks; if (tracks) for (let index = 0; index < tracks.length; index += 1) tracks[index].mode = "hidden"; }, 0); return () => window.clearTimeout(timer); }, [sourceKey, captions.length, qualityKey, initialQuality]);
-  const toggleCaptions = () => { const tracks = mediaRef.current?.textTracks; if (!tracks) return; const enabled = !state.captionsEnabled; for (let index = 0; index < tracks.length; index += 1) tracks[index].mode = enabled ? "showing" : "hidden"; setState((current) => ({ ...current, captionsEnabled: enabled })); onCaptionChange?.(enabled); };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => { if (event.key === "Escape") { setMenu(null); setVolumeOpen(false); return; } if (!keyboardShortcuts || isEditable(event.target)) return; if (event.key === " " || event.key.toLowerCase() === "k") { event.preventDefault(); void togglePlay(); } if (event.key === "ArrowLeft") seek((mediaRef.current?.currentTime ?? 0) - seekStep); if (event.key === "ArrowRight") seek((mediaRef.current?.currentTime ?? 0) + seekStep); if (event.key === "ArrowUp") setVolume(Math.min(1, (mediaRef.current?.volume ?? 1) + 0.05)); if (event.key === "ArrowDown") setVolume(Math.max(0, (mediaRef.current?.volume ?? 1) - 0.05)); if (event.key.toLowerCase() === "m") toggleMute(); if (event.key.toLowerCase() === "f" && type === "video") void requestFullscreen(); if (event.key.toLowerCase() === "p" && type === "video") void enterPictureInPicture(); if (event.key.toLowerCase() === "c" && captions.length) toggleCaptions(); if (event.key === ">") setPlaybackRate(Math.min(2, (mediaRef.current?.playbackRate ?? 1) + 0.25)); if (event.key === "<") setPlaybackRate(Math.max(0.25, (mediaRef.current?.playbackRate ?? 1) - 0.25)); };
-  const switchQuality = (label: string) => { const selected = quality.find((item) => item.label === label); const media = mediaRef.current; if (!selected || !media) return; const time = media.currentTime; const wasPlaying = !media.paused; media.src = sourceValue(selected.src); media.load(); media.addEventListener("loadedmetadata", () => { media.currentTime = time; if (wasPlaying) void media.play(); }, { once: true }); setState((current) => ({ ...current, quality: label })); onQualityChange?.(label); setMenu(null); };
-  const showSeekFeedback = (direction: "back" | "forward") => { seek((mediaRef.current?.currentTime ?? 0) + (direction === "forward" ? seekStep : -seekStep)); setSeekFeedback(direction); window.setTimeout(() => setSeekFeedback(null), 500); };
-  const mediaProps = { src: sourceValue(src), preload, autoPlay: autoplay, muted, loop, poster: type === "video" ? poster : undefined, className: "media-element", onClick: () => { if (type === "video") setState((current) => ({ ...current, controlsVisible: !current.controlsVisible })); }, onPlay: () => { setState((current) => ({ ...current, playing: true, buffering: false })); onPlay?.(); }, onPause: () => { setState((current) => ({ ...current, playing: false })); onPause?.(); }, onEnded: () => { setState((current) => ({ ...current, playing: false })); onEnded?.(); }, onTimeUpdate: () => { const currentTime = mediaRef.current?.currentTime ?? 0; setState((current) => ({ ...current, currentTime })); onTimeUpdate?.(currentTime); }, onProgress: () => { const media = mediaRef.current; const buffered = media?.duration && media.buffered.length ? media.buffered.end(media.buffered.length - 1) / media.duration : 0; setState((current) => ({ ...current, buffered })); onProgress?.(buffered); }, onLoadedMetadata: () => { const duration = mediaRef.current?.duration ?? 0; setState((current) => ({ ...current, duration, error: undefined })); onLoadedMetadata?.(duration); }, onWaiting: () => { setState((current) => ({ ...current, buffering: true })); onWaiting?.(); }, onPlaying: () => { setState((current) => ({ ...current, buffering: false })); onPlaying?.(); }, onRateChange: () => { const rate = mediaRef.current?.playbackRate ?? 1; setState((current) => ({ ...current, playbackRate: rate })); onRateChange?.(rate); }, onVolumeChange: () => { const media = mediaRef.current; if (!media) return; setState((current) => ({ ...current, volume: media.volume, muted: media.muted })); onVolumeChange?.(media.volume, media.muted); }, onError: () => { const error = mediaRef.current?.error; setError({ code: error?.code, nativeError: error, message: "The media could not be loaded. Check the source and browser format support." }); } };
-  const controlButton = (label: string, icon: IconName, onClick: () => void, active = false, extra = "") => <button type="button" className={`control-button ${active ? "active" : ""} ${extra}`} onClick={onClick} aria-label={label} title={label}><Icon name={icon} /></button>;
-  const progress = <div className="progress-wrap"><div className="buffered-bar" style={{ width: `${state.buffered * 100}%` }} /><input aria-label="Seek through media" type="range" min="0" max={state.duration || 0} step="0.1" value={Math.min(state.currentTime, state.duration || 0)} onChange={(event: ChangeEvent<HTMLInputElement>) => seek(Number(event.target.value))} /></div>;
-  const volumeIcon = state.muted || state.volume === 0 ? "mute" : state.volume < 0.34 ? "volume-low" : state.volume < 0.7 ? "volume-medium" : "volume-high";
-  const volumeValue = state.muted ? 0 : state.volume;
-  const volumeControl = config.volume && <div className="volume-control">{controlButton("Open volume controls", volumeIcon, () => { positionVolume(); setMenu(null); setVolumeOpen((open) => !open); }, volumeOpen)}<div className={`volume-popover ${volumeOpen ? "open" : ""}`} style={{ top: volumePosition.top, left: volumePosition.left }}><input aria-label="Volume" type="range" min="0" max="1" step="0.05" value={volumeValue} style={{ "--range-fill": `${volumeValue * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div><input aria-label="Volume" className="volume-range" type="range" min="0" max="1" step="0.05" value={volumeValue} style={{ "--range-fill": `${volumeValue * 100}%` } as React.CSSProperties} onChange={(event) => setVolume(Number(event.target.value))} /></div>;
-  const settings = config.settings && <div className="menu-wrap"><button ref={settingsButtonRef} type="button" className={`control-button ${menu ? "active" : ""}`} onClick={() => { setVolumeOpen(false); if (menu) setMenu(null); else { positionSettings(); setMenu("main"); } }} aria-label="Settings" aria-expanded={Boolean(menu)} title="Settings"><Icon name="settings" /></button></div>;
-  const settingsPanel = menu && typeof document !== "undefined" ? createPortal(<div className="external-media-menu media-menu" style={{ top: settingsPosition.top, left: settingsPosition.left }} role="menu">{menu === "main" && <><strong>Player settings</strong>{playbackRate && <button type="button" role="menuitem" onClick={() => setMenu("speed")}>Playback speed <span>{state.playbackRate}x <Icon name="chevron" size={16} /></span></button>}{quality.length > 1 && <button type="button" role="menuitem" onClick={() => setMenu("quality")}>Video quality <span>{state.quality ?? "Auto"} <Icon name="chevron" size={16} /></span></button>}</>}{menu === "speed" && <><button type="button" className="menu-back" role="menuitem" onClick={() => setMenu("main")}><Icon name="back" size={16} /> Playback speed</button>{playbackRates.map((rate) => <button type="button" role="menuitem" key={rate} className={state.playbackRate === rate ? "selected" : ""} onClick={() => { setPlaybackRate(rate); setMenu(null); }}>{rate}x{state.playbackRate === rate && <span>Selected</span>}</button>)}</>}{menu === "quality" && <><button type="button" className="menu-back" role="menuitem" onClick={() => setMenu("main")}><Icon name="back" size={16} /> Video quality</button>{quality.map((item) => <button type="button" role="menuitem" key={item.label} className={state.quality === item.label ? "selected" : ""} onClick={() => switchQuality(item.label)}>{item.label}{state.quality === item.label && <span>Selected</span>}</button>)}</>}</div>, document.body) : null;
-  const utilityControls = hasControls && <div className="player-utility">{config.captions && controlButton("Toggle captions", "captions", toggleCaptions, state.captionsEnabled, "captions-control")}{settings}</div>;
-  const controlsMarkup = hasControls && <div className={`media-controls ${showControls ? "visible" : "hidden"}`}>{progress}<div className="control-row">{controlButton("Skip backward 10 seconds", "skip-back", () => showSeekFeedback("back"))}{config.play && controlButton(state.playing ? "Pause" : "Play", state.playing ? "pause" : "play", () => void togglePlay(), false, "play-button")}{controlButton("Skip forward 10 seconds", "skip-forward", () => showSeekFeedback("forward"))}<span className="time-label">{formatTime(state.currentTime)} / {formatTime(state.duration)}</span><span className="control-spacer" />{volumeControl}{config.pictureInPicture && controlButton("Picture-in-Picture", "pip", () => void enterPictureInPicture())}{config.fullscreen && controlButton(state.fullscreen ? "Exit fullscreen" : "Fullscreen", state.fullscreen ? "compress" : "fullscreen", () => void (state.fullscreen ? exitFullscreen() : requestFullscreen()))}</div></div>;
-  return <div ref={containerRef} className={`media-player media-player-${type} ${className}`} style={{ "--media-primary": accent } as React.CSSProperties} tabIndex={0} onKeyDown={onKeyDown} onDoubleClick={(event) => { if (type !== "video" || (event.target as HTMLElement).closest("button,input,.media-menu,.volume-popover,.media-controls")) return; const bounds = event.currentTarget.getBoundingClientRect(); const position = event.clientX - bounds.left; if (position < bounds.width * .35) showSeekFeedback("back"); else if (position > bounds.width * .65) showSeekFeedback("forward"); }}>
-    {type === "video" ? <video {...mediaProps} ref={mediaRef as React.RefObject<HTMLVideoElement>}>{captions.map((track) => <track key={track.src} {...track} kind={track.kind ?? "subtitles"} />)}{chapters && <track {...chapters} kind="chapters" />}</video> : <div className="audio-stage"><div className="audio-artwork">{artwork ? <img src={artwork} alt="" /> : <Icon name="music" size={38} />}</div><div className="audio-copy">{mediaSession?.title && <strong>{mediaSession.title}</strong>}{mediaSession?.artist && <span>{mediaSession.artist}</span>}</div><div className="audio-wave" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div><audio {...mediaProps} ref={mediaRef as React.RefObject<HTMLAudioElement>}>{captions.map((track) => <track key={track.src} {...track} kind={track.kind ?? "subtitles"} />)}</audio></div>}
-    {utilityControls}
-    {type === "video" && !state.playing && !state.error && controlButton("Play", "play", () => void togglePlay(), false, "center-play")}
-    {seekFeedback && <div className={`seek-feedback ${seekFeedback}`}><Icon name={seekFeedback === "back" ? "skip-back" : "skip-forward"} size={24} /><span>{seekStep}s</span></div>}
-    {state.buffering && <div className="media-loading" role="status"><span /> Loading</div>}{state.error && <div className="media-error" role="alert"><strong>Playback unavailable</strong><span>{state.error.message}</span><button type="button" onClick={() => { setState((current) => ({ ...current, error: undefined })); mediaRef.current?.load(); }}>Retry</button></div>}{notice && <div className="media-notice" role="status">{notice}</div>}{controlsMarkup}{settingsPanel}
-  </div>;
+
+  // ---- captions: apply the enabled state to the real TextTracks (also starts the fetch, so load/error can be reported) ----
+  const captionsKey = captions.map((track) => track.src).join("|");
+  useEffect(() => {
+    const tracks = mediaRef.current?.textTracks;
+    if (!tracks) return;
+    const activeIndex = Math.max(0, captions.findIndex((track) => track.default));
+    let subtitleIndex = 0;
+    for (let index = 0; index < tracks.length; index += 1) {
+      if (tracks[index].kind === "chapters") continue;
+      tracks[index].mode = state.captionsEnabled && subtitleIndex === activeIndex ? "showing" : "hidden";
+      subtitleIndex += 1;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.captionsEnabled, captionsKey, sourceKey]);
+  const onCaptionStatus = useCallback((trackSrc: string, ok: boolean) => setCaptionStatus((current) => (current[trackSrc] === ok ? current : { ...current, [trackSrc]: ok })), []);
+  const toggleCaptions = () => { if (readyCaptions.length === 0) return; const enabled = !state.captionsEnabled; patch({ captionsEnabled: enabled }); latest.current.onCaptionChange?.(enabled); };
+
+  // ---- menus close on outside pointer / Escape ----
+  useEffect(() => {
+    if (menu === null) return;
+    const onPointerDown = (event: globalThis.PointerEvent) => { if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) changeMenu(null); };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") changeMenu(null); };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); };
+  }, [menu, changeMenu]);
+
+  // ---- drag (progress / volume): released anywhere ----
+  useEffect(() => {
+    if (!dragging) return;
+    const end = () => { setDragging(null); wake(); requestAnimationFrame(() => syncMedia(true)); };
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => { window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragging, wake]);
+
+  // ---- quality: switch to a REAL alternative source, keep position and play state ----
+  const switchQuality = (label: string) => {
+    const media = mediaRef.current;
+    if (!media || label === qualityLabel) { changeMenu(null); return; }
+    resumeRef.current = { time: media.currentTime, playing: !media.paused };
+    setQualityLabel(label);
+    patch({ quality: label, buffering: true });
+    latest.current.onQualityChange?.(label);
+    changeMenu(null);
+  };
+
+  // ---- double tap (touch only, on the dedicated surface, so controls can never trigger it) ----
+  const skip = (side: "back" | "forward") => {
+    seekBy(side === "forward" ? seekStep : -seekStep);
+    setSeekFeedback({ side, id: Date.now() });
+    if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
+    feedbackTimer.current = window.setTimeout(() => setSeekFeedback(null), 700);
+  };
+  const onSurfacePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "touch") return;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const side = event.clientX < bounds.left + bounds.width / 2 ? "back" : "forward";
+    const now = performance.now();
+    const tap = tapRef.current;
+    const isDouble = (now - tap.time < 300 && Math.abs(event.clientX - tap.x) < 80) || (now < tap.chainUntil && side === tap.side);
+    if (isDouble) { skip(side); tap.chainUntil = now + 500; tap.side = side; tap.time = 0; } else { tap.time = now; tap.x = event.clientX; }
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!keyboardShortcuts || isEditable(event.target)) return;
+    const key = event.key.toLowerCase();
+    if ((event.key === " " || key === "k") && !isButton(event.target)) { event.preventDefault(); void togglePlay(); }
+    else if (event.key === "ArrowLeft") seekBy(-seekStep);
+    else if (event.key === "ArrowRight") seekBy(seekStep);
+    else if (event.key === "ArrowUp") { event.preventDefault(); setVolume((mediaRef.current?.volume ?? 1) + 0.05); }
+    else if (event.key === "ArrowDown") { event.preventDefault(); setVolume((mediaRef.current?.volume ?? 1) - 0.05); }
+    else if (key === "m") toggleMute();
+    else if (key === "f") void (state.fullscreen ? exitFullscreen() : requestFullscreen());
+    else if (key === "c" && readyCaptions.length) toggleCaptions();
+    wake();
+  };
+
+  // ---- <video> events ----
+  const mediaEvents = {
+    onPlay: () => { setHasLoaded(true); patch({ playing: true, buffering: false }); wake(); onPlay?.(); },
+    onPause: () => { patch({ playing: false }); onPause?.(); },
+    onEnded: () => { patch({ playing: false, controlsVisible: true }); syncMedia(true); onEnded?.(); },
+    onTimeUpdate: () => { syncMedia(); latest.current.onTimeUpdate?.(mediaRef.current?.currentTime ?? 0); },
+    onProgress: () => { syncMedia(); const media = mediaRef.current; const duration = safeDuration(media?.duration ?? 0); if (media && duration > 0) latest.current.onProgress?.(clamp(bufferedEnd(media, media.currentTime) / duration, 0, 1)); },
+    onDurationChange: () => syncMedia(true),
+    onSeeking: () => syncMedia(),
+    onSeeked: () => { syncMedia(); patch({ buffering: false }); },
+    onLoadedMetadata: () => {
+      const media = mediaRef.current;
+      if (!media) return;
+      const pending = resumeRef.current;
+      if (pending) { resumeRef.current = null; const duration = safeDuration(media.duration); media.currentTime = duration > 0 ? clamp(pending.time, 0, duration) : 0; if (pending.playing) void media.play().catch(() => undefined); }
+      setHasLoaded(true);
+      syncMedia(true);
+      patch({ volume: media.volume, muted: media.muted, playbackRate: media.playbackRate, error: undefined });
+      onLoadedMetadata?.(safeDuration(media.duration));
+    },
+    onLoadStart: () => { if (resumeRef.current) patch({ buffering: true }); },
+    onCanPlay: () => { setHasLoaded(true); patch({ buffering: false }); },
+    onWaiting: () => { patch({ buffering: true }); onWaiting?.(); },
+    onPlaying: () => { patch({ buffering: false }); onPlaying?.(); },
+    onRateChange: () => { const rate = mediaRef.current?.playbackRate ?? 1; patch({ playbackRate: rate }); onRateChange?.(rate); },
+    onVolumeChange: () => { const media = mediaRef.current; if (!media) return; if (!media.muted && media.volume > 0) previousVolume.current = media.volume; patch({ volume: media.volume, muted: media.muted }); onVolumeChange?.(media.volume, media.muted); },
+    onError: () => { const error = mediaRef.current?.error; if (!error) return; raiseError({ code: error.code, nativeError: error, message: "The media could not be loaded." }); },
+  };
+
+  const retry = () => {
+    const media = mediaRef.current;
+    if (!media) return;
+    resumeRef.current = { time: state.currentTime, playing: true };
+    setHasLoaded(false);
+    patch({ error: undefined, buffering: true });
+    media.load();
+  };
+
+  const VolumeIcon = state.muted || state.volume === 0 ? VolumeX : state.volume < 0.4 ? Volume1 : Volume2;
+  const effectiveVolume = state.muted ? 0 : state.volume;
+  const duration = safeDuration(state.duration);
+  const currentTime = duration > 0 ? clamp(state.currentTime, 0, duration) : 0;
+
+  // ---- the ONE progress bar: rail (gray) + buffered (white) + played (accent) + the input's own thumb ----
+  const progress = config.progress && (
+    <div className={`progress-wrap ${dragging === "seek" ? "is-dragging" : ""}`} style={{ "--pct": duration > 0 ? currentTime / duration : 0, "--buf": state.buffered } as CSSProperties}>
+      <span className="progress-rail" /><span className="progress-buffered" /><span className="progress-played" />
+      <input className="progress-range" type="range" aria-label="Seek through video" aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`} min={0} max={duration || 1} step={0.1} value={currentTime} disabled={duration === 0}
+        onPointerDown={() => setDragging("seek")} onChange={(event) => seek(Number(event.target.value))} />
+    </div>
+  );
+
+  const settingsButton = config.settings && (
+    <div ref={settingsRef} className="player-menu-anchor">
+      <IconButton label="Settings" active={menu !== null} onClick={() => changeMenu(menu ? null : "main")}><Settings size={isTouch ? 22 : 20} /></IconButton>
+      {menu && (
+        <div className="player-menu" role="menu">
+          {isTouch && <div className="menu-handle" aria-hidden="true" />}
+          {menu === "main" && <>
+            {speedOptions.length > 0 && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={18} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
+            {hasQuality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={18} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
+          </>}
+          {menu === "speed" && <>
+            <button type="button" className="menu-back" onClick={() => changeMenu("main")}><b><ArrowLeft size={16} />Playback speed</b></button>
+            {speedOptions.map((rate) => <button type="button" role="menuitemradio" aria-checked={state.playbackRate === rate} key={rate} className={state.playbackRate === rate ? "selected" : ""} onClick={() => { setPlaybackRate(rate); changeMenu(null); }}><b>{formatRate(rate)}</b>{state.playbackRate === rate && <Check size={16} />}</button>)}
+          </>}
+          {menu === "quality" && <>
+            <button type="button" className="menu-back" onClick={() => changeMenu("main")}><b><ArrowLeft size={16} />Quality</b></button>
+            {[DEFAULT_QUALITY, ...quality.map((item) => item.label)].map((label) => <button type="button" role="menuitemradio" aria-checked={qualityLabel === label} key={label} className={qualityLabel === label ? "selected" : ""} onClick={() => switchQuality(label)}><b>{label}</b>{qualityLabel === label && <Check size={16} />}</button>)}
+          </>}
+        </div>
+      )}
+    </div>
+  );
+  const captionsButton = config.captions && <IconButton label={state.captionsEnabled ? "Turn captions off" : "Turn captions on"} active={state.captionsEnabled} onClick={toggleCaptions}><Captions size={isTouch ? 22 : 20} /></IconButton>;
+  const fullscreenButton = config.fullscreen && <IconButton label={state.fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void (state.fullscreen ? exitFullscreen() : requestFullscreen())}>{state.fullscreen ? <Minimize size={isTouch ? 22 : 20} /> : <Maximize size={isTouch ? 22 : 20} />}</IconButton>;
+  const playPause = config.play && <IconButton label={state.playing ? "Pause" : "Play"} className="play-control" onClick={() => void togglePlay()}>{state.playing ? <Pause size={isTouch ? 30 : 22} /> : <Play size={isTouch ? 30 : 22} />}</IconButton>;
+  const time = <span className="time-label">{formatTime(currentTime)} / {formatTime(duration)}</span>;
+
+  const desktopControls = (
+    <div className="player-controls desktop">
+      {progress}
+      <div className="control-row">
+        {playPause}
+        <IconButton label={`Back ${seekStep} seconds`} onClick={() => seekBy(-seekStep)}><SkipBack size={20} /></IconButton>
+        <IconButton label={`Forward ${seekStep} seconds`} onClick={() => seekBy(seekStep)}><SkipForward size={20} /></IconButton>
+        {config.volume && (
+          <div className="volume-group">
+            <IconButton label={state.muted ? "Unmute" : "Mute"} onClick={toggleMute}><VolumeIcon size={20} /></IconButton>
+            <input className="volume-range" type="range" aria-label="Volume" min={0} max={1} step={0.01} value={effectiveVolume} style={{ "--range-fill": `${effectiveVolume * 100}%` } as CSSProperties}
+              onPointerDown={() => setDragging("volume")} onChange={(event) => setVolume(Number(event.target.value))} />
+          </div>
+        )}
+        {time}
+        <span className="control-spacer" />
+        {captionsButton}
+        {settingsButton}
+        {config.pictureInPicture && <IconButton label="Picture-in-Picture" onClick={() => void (state.pictureInPicture ? exitPictureInPicture() : enterPictureInPicture())} active={state.pictureInPicture}><PictureInPicture2 size={20} /></IconButton>}
+        {fullscreenButton}
+      </div>
+    </div>
+  );
+
+  // Touch layout follows the mobile reference: CC + settings top-right, transport centered, time + fullscreen + progress at the bottom.
+  const touchControls = (
+    <div className="player-controls touch">
+      <div className="touch-top">{captionsButton}{settingsButton}</div>
+      <div className="touch-center">
+        <IconButton label={`Back ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(-seekStep)}><SkipBack size={26} /></IconButton>
+        {!loading && playPause}
+        {loading && <span className="touch-center-spacer" />}
+        <IconButton label={`Forward ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(seekStep)}><SkipForward size={26} /></IconButton>
+      </div>
+      <div className="touch-bottom"><div className="touch-meta">{time}{fullscreenButton}</div>{progress}</div>
+    </div>
+  );
+
+  return (
+    <div ref={playerRef} className={`media-player ${isTouch ? "is-touch" : "is-desktop"} ${controlsVisible ? "" : "controls-hidden"} ${state.fullscreen ? "is-fullscreen" : ""} ${className}`} style={{ "--player-accent": accent } as CSSProperties}
+      tabIndex={0} onKeyDown={onKeyDown} onFocus={wake} onPointerDown={wake} onPointerMove={(event) => { if (event.pointerType !== "touch") wake(); }}>
+      <video ref={mediaRef} className="media-element" src={sourceValue(activeSource)} preload={preload} autoPlay={autoplay} muted={muted} loop={loop} poster={poster} playsInline {...mediaEvents}>
+        {captions.map((track) => <CaptionTrack key={track.src} track={track} onStatus={onCaptionStatus} />)}
+        {chapters && <track src={chapters.src} srcLang={chapters.srcLang} label={chapters.label} kind="chapters" />}
+      </video>
+      {/* Video surface: never toggles playback. It only wakes the controls (via the container) and detects touch double-taps. */}
+      <div className="tap-surface" onPointerUp={onSurfacePointerUp} />
+      {seekFeedback && <div key={seekFeedback.id} className={`seek-feedback ${seekFeedback.side}`} aria-hidden="true">{seekFeedback.side === "back" ? <ChevronsLeft size={26} /> : <ChevronsRight size={26} />}<b>{seekStep} seconds</b></div>}
+      {loading && <div className="player-loader" role="status" aria-label={hasLoaded ? "Buffering" : "Loading video"}><span className="loader-ring" /></div>}
+      {state.error && <div className="media-error" role="alert"><X size={20} /><strong>Unable to load video</strong><button type="button" onClick={retry}>Retry</button></div>}
+      {notice && <div className="media-notice" role="status">{notice}</div>}
+      {isTouch && menu && <div className="menu-backdrop" />}
+      {hasControls && (isTouch ? touchControls : desktopControls)}
+    </div>
+  );
 });

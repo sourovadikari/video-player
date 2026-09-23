@@ -2,9 +2,6 @@ import type { Metadata } from "next";
 import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import "../components/media-player/media-player.css";
-import "../components/media-player/player-tuning.css";
-import "../components/media-player/player-final.css";
-import "../components/media-player/player-polish.css";
 
 const display = Space_Grotesk({
   variable: "--font-display",
@@ -18,8 +15,8 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: { default: "signalplay | A media player for the web", template: "%s | signalplay" },
-  description: "A reusable, accessible React video and audio player built on native browser media APIs.",
+  title: { default: "signalplay | Video player for the web", template: "%s | signalplay" },
+  description: "A reusable, accessible video player built on native browser media APIs.",
   metadataBase: new URL("https://signalplay.local"),
 };
 
