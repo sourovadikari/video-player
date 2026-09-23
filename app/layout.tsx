@@ -3,6 +3,7 @@ import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import "../components/media-player/media-player.css";
 import "../components/media-player/player-tuning.css";
+import "../components/media-player/player-final.css";
 
 const display = Space_Grotesk({
   variable: "--font-display",
