@@ -8,6 +8,9 @@ const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const DEFAULT_QUALITY = "Default";
 const HIDE_DELAY = 2800;
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
+const ICON_DESKTOP = 18; // visual icon size only; the button hit area stays 40px
+const ICON_TOUCH = 20;
+const ICON_MENU = 16;
 
 type LockableOrientation = ScreenOrientation & { lock?: (orientation: "landscape") => Promise<void>; unlock?: () => void };
 type Drag = "seek" | "volume" | null;
@@ -70,6 +73,10 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const hideTimer = useRef<number | undefined>(undefined);
   const feedbackTimer = useRef<number | undefined>(undefined);
   const holdRef = useRef(false);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const ignoreTapUntil = useRef(0);
+  const hideAnchor = useRef<{ x: number; y: number } | null>(null);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
   const previousVolume = useRef(1);
   const resumeRef = useRef<{ time: number; playing: boolean } | null>(null);
   const tapRef = useRef<{ time: number; x: number; chainUntil: number; side: "back" | "forward" | null }>({ time: 0, x: 0, chainUntil: 0, side: null });
@@ -84,6 +91,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const [menu, setMenu] = useState<"main" | "speed" | "quality" | null>(null);
   const [dragging, setDragging] = useState<Drag>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [userHidden, setUserHidden] = useState(false);
   const [qualityLabel, setQualityLabel] = useState(DEFAULT_QUALITY);
   const [seekFeedback, setSeekFeedback] = useState<{ side: "back" | "forward"; id: number } | null>(null);
   const [notice, setNotice] = useState("");
@@ -96,6 +105,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     setPrevSourceKey(sourceKey);
     setMenu(null);
     setHasLoaded(false);
+    setStarted(false);
+    setUserHidden(false);
     setQualityLabel(DEFAULT_QUALITY);
     setState((current) => ({ ...current, currentTime: 0, duration: 0, buffered: 0, playing: false, buffering: false, quality: quality.length > 0 ? DEFAULT_QUALITY : undefined, error: undefined }));
   }
@@ -118,8 +129,9 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   };
   const hasControls = controls !== false;
   const activeSource = qualityLabel === DEFAULT_QUALITY ? src : quality.find((item) => item.label === qualityLabel)?.src ?? src;
-  const hold = !state.playing || menu !== null || dragging !== null || Boolean(state.error);
-  const controlsVisible = hold || state.controlsVisible;
+  const strongHold = menu !== null || dragging !== null || Boolean(state.error); // always visible, cannot be toggled off
+  const hold = !state.playing || strongHold; // blocks AUTO-hide (paused also keeps controls up)
+  const controlsVisible = strongHold || (!userHidden && (hold || state.controlsVisible));
   const loading = !state.error && (!hasLoaded || state.buffering);
 
   useEffect(() => { latest.current = { onFullscreenChange, onCaptionChange, onSeek, onQualityChange, onProgress, onTimeUpdate }; });
@@ -132,7 +144,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
     hideTimer.current = window.setTimeout(() => { if (!holdRef.current) patch({ controlsVisible: false }); }, HIDE_DELAY);
   }, [patch]);
-  const wake = useCallback(() => { patch({ controlsVisible: true }); scheduleHide(); }, [patch, scheduleHide]);
+  const wake = useCallback(() => { hideAnchor.current = null; setUserHidden(false); patch({ controlsVisible: true }); scheduleHide(); }, [patch, scheduleHide]);
   useEffect(() => () => { clearHideTimer(); if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current); }, []);
   const changeMenu = useCallback((next: "main" | "speed" | "quality" | null) => { setMenu(next); wake(); }, [wake]);
 
@@ -255,7 +267,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   // ---- menus close on outside pointer / Escape ----
   useEffect(() => {
     if (menu === null) return;
-    const onPointerDown = (event: globalThis.PointerEvent) => { if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) changeMenu(null); };
+    const onPointerDown = (event: globalThis.PointerEvent) => { if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) { if (event.target === surfaceRef.current) ignoreTapUntil.current = performance.now() + 800; changeMenu(null); } };
     const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") changeMenu(null); };
     document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -290,14 +302,25 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
     feedbackTimer.current = window.setTimeout(() => setSeekFeedback(null), 700);
   };
+  // Video surface: toggles control visibility ONLY. It never plays or pauses.
+  const toggleControls = (x: number, y: number) => {
+    if (!controlsVisible) { wake(); return; }
+    if (strongHold) return;
+    clearHideTimer();
+    hideAnchor.current = { x, y }; // desktop: ignore tiny mouse jitter so the hide sticks until the pointer really moves
+    setUserHidden(true);
+    patch({ controlsVisible: false });
+  };
   const onSurfacePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.pointerType !== "touch") return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (performance.now() < ignoreTapUntil.current) return; // this press only closed a menu
+    if (event.pointerType !== "touch") { toggleControls(event.clientX, event.clientY); return; }
     const bounds = event.currentTarget.getBoundingClientRect();
     const side = event.clientX < bounds.left + bounds.width / 2 ? "back" : "forward";
     const now = performance.now();
     const tap = tapRef.current;
     const isDouble = (now - tap.time < 300 && Math.abs(event.clientX - tap.x) < 80) || (now < tap.chainUntil && side === tap.side);
-    if (isDouble) { skip(side); tap.chainUntil = now + 500; tap.side = side; tap.time = 0; } else { tap.time = now; tap.x = event.clientX; }
+    if (isDouble) { skip(side); wake(); tap.chainUntil = now + 500; tap.side = side; tap.time = 0; } else { tap.time = now; tap.x = event.clientX; toggleControls(event.clientX, event.clientY); }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -316,7 +339,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
 
   // ---- <video> events ----
   const mediaEvents = {
-    onPlay: () => { setHasLoaded(true); patch({ playing: true, buffering: false }); wake(); onPlay?.(); },
+    onPlay: () => { setHasLoaded(true); setStarted(true); patch({ playing: true, buffering: false }); wake(); onPlay?.(); },
     onPause: () => { patch({ playing: false }); onPause?.(); },
     onEnded: () => { patch({ playing: false, controlsVisible: true }); syncMedia(true); onEnded?.(); },
     onTimeUpdate: () => { syncMedia(); latest.current.onTimeUpdate?.(mediaRef.current?.currentTime ?? 0); },
@@ -368,13 +391,13 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
 
   const settingsButton = config.settings && (
     <div ref={settingsRef} className="player-menu-anchor">
-      <IconButton label="Settings" active={menu !== null} onClick={() => changeMenu(menu ? null : "main")}><Settings size={isTouch ? 22 : 20} /></IconButton>
+      <IconButton label="Settings" active={menu !== null} onClick={() => changeMenu(menu ? null : "main")}><Settings size={isTouch ? ICON_TOUCH : ICON_DESKTOP} /></IconButton>
       {menu && (
         <div className="player-menu" role="menu">
           {isTouch && <div className="menu-handle" aria-hidden="true" />}
           {menu === "main" && <>
-            {speedOptions.length > 0 && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={18} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
-            {hasQuality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={18} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
+            {speedOptions.length > 0 && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={ICON_MENU} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
+            {hasQuality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={ICON_MENU} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
           </>}
           {menu === "speed" && <>
             <button type="button" className="menu-back" onClick={() => changeMenu("main")}><b><ArrowLeft size={16} />Playback speed</b></button>
@@ -388,9 +411,9 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
       )}
     </div>
   );
-  const captionsButton = config.captions && <IconButton label={state.captionsEnabled ? "Turn captions off" : "Turn captions on"} active={state.captionsEnabled} onClick={toggleCaptions}><Captions size={isTouch ? 22 : 20} /></IconButton>;
-  const fullscreenButton = config.fullscreen && <IconButton label={state.fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void (state.fullscreen ? exitFullscreen() : requestFullscreen())}>{state.fullscreen ? <Minimize size={isTouch ? 22 : 20} /> : <Maximize size={isTouch ? 22 : 20} />}</IconButton>;
-  const playPause = config.play && <IconButton label={state.playing ? "Pause" : "Play"} className="play-control" onClick={() => void togglePlay()}>{state.playing ? <Pause size={isTouch ? 30 : 22} /> : <Play size={isTouch ? 30 : 22} />}</IconButton>;
+  const captionsButton = config.captions && <IconButton label={state.captionsEnabled ? "Turn captions off" : "Turn captions on"} active={state.captionsEnabled} onClick={toggleCaptions}><Captions size={isTouch ? ICON_TOUCH : ICON_DESKTOP} /></IconButton>;
+  const fullscreenButton = config.fullscreen && <IconButton label={state.fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void (state.fullscreen ? exitFullscreen() : requestFullscreen())}>{state.fullscreen ? <Minimize size={isTouch ? ICON_TOUCH : ICON_DESKTOP} /> : <Maximize size={isTouch ? ICON_TOUCH : ICON_DESKTOP} />}</IconButton>;
+  const playPause = config.play && <IconButton label={state.playing ? "Pause" : "Play"} className="play-control" onClick={() => void togglePlay()}>{state.playing ? <Pause size={isTouch ? 26 : 20} /> : <Play size={isTouch ? 26 : 20} />}</IconButton>;
   const time = <span className="time-label">{formatTime(currentTime)} / {formatTime(duration)}</span>;
 
   const desktopControls = (
@@ -398,11 +421,11 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
       {progress}
       <div className="control-row">
         {playPause}
-        <IconButton label={`Back ${seekStep} seconds`} onClick={() => seekBy(-seekStep)}><SkipBack size={20} /></IconButton>
-        <IconButton label={`Forward ${seekStep} seconds`} onClick={() => seekBy(seekStep)}><SkipForward size={20} /></IconButton>
+        <IconButton label={`Back ${seekStep} seconds`} onClick={() => seekBy(-seekStep)}><SkipBack size={ICON_DESKTOP} /></IconButton>
+        <IconButton label={`Forward ${seekStep} seconds`} onClick={() => seekBy(seekStep)}><SkipForward size={ICON_DESKTOP} /></IconButton>
         {config.volume && (
           <div className="volume-group">
-            <IconButton label={state.muted ? "Unmute" : "Mute"} onClick={toggleMute}><VolumeIcon size={20} /></IconButton>
+            <IconButton label={state.muted ? "Unmute" : "Mute"} onClick={toggleMute}><VolumeIcon size={ICON_DESKTOP} /></IconButton>
             <input className="volume-range" type="range" aria-label="Volume" min={0} max={1} step={0.01} value={effectiveVolume} style={{ "--range-fill": `${effectiveVolume * 100}%` } as CSSProperties}
               onPointerDown={() => setDragging("volume")} onChange={(event) => setVolume(Number(event.target.value))} />
           </div>
@@ -411,7 +434,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
         <span className="control-spacer" />
         {captionsButton}
         {settingsButton}
-        {config.pictureInPicture && <IconButton label="Picture-in-Picture" onClick={() => void (state.pictureInPicture ? exitPictureInPicture() : enterPictureInPicture())} active={state.pictureInPicture}><PictureInPicture2 size={20} /></IconButton>}
+        {config.pictureInPicture && <IconButton label="Picture-in-Picture" onClick={() => void (state.pictureInPicture ? exitPictureInPicture() : enterPictureInPicture())} active={state.pictureInPicture}><PictureInPicture2 size={ICON_DESKTOP} /></IconButton>}
         {fullscreenButton}
       </div>
     </div>
@@ -422,10 +445,10 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     <div className="player-controls touch">
       <div className="touch-top">{captionsButton}{settingsButton}</div>
       <div className="touch-center">
-        <IconButton label={`Back ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(-seekStep)}><SkipBack size={26} /></IconButton>
+        <IconButton label={`Back ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(-seekStep)}><SkipBack size={ICON_TOUCH} /></IconButton>
         {!loading && playPause}
         {loading && <span className="touch-center-spacer" />}
-        <IconButton label={`Forward ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(seekStep)}><SkipForward size={26} /></IconButton>
+        <IconButton label={`Forward ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(seekStep)}><SkipForward size={ICON_TOUCH} /></IconButton>
       </div>
       <div className="touch-bottom"><div className="touch-meta">{time}{fullscreenButton}</div>{progress}</div>
     </div>
@@ -433,14 +456,16 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
 
   return (
     <div ref={playerRef} className={`media-player ${isTouch ? "is-touch" : "is-desktop"} ${controlsVisible ? "" : "controls-hidden"} ${state.fullscreen ? "is-fullscreen" : ""} ${className}`} style={{ "--player-accent": accent } as CSSProperties}
-      tabIndex={0} onKeyDown={onKeyDown} onFocus={wake} onPointerDown={wake} onPointerMove={(event) => { if (event.pointerType !== "touch") wake(); }}>
-      <video ref={mediaRef} className="media-element" src={sourceValue(activeSource)} preload={preload} autoPlay={autoplay} muted={muted} loop={loop} poster={poster} playsInline {...mediaEvents}>
+      tabIndex={0} onKeyDown={onKeyDown} onFocus={(event) => { if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) wake(); }}
+      onPointerDown={(event) => { if (event.target !== surfaceRef.current) wake(); }}
+      onPointerMove={(event) => { if (event.pointerType === "touch") return; const last = lastPointer.current; lastPointer.current = { x: event.clientX, y: event.clientY }; if (last && last.x === event.clientX && last.y === event.clientY) return; /* same-position moves (synthetic, pre-click) are not activity */ const anchor = hideAnchor.current; if (anchor && Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y) < 10) return; wake(); }}>
+      <video ref={mediaRef} className="media-element" src={sourceValue(activeSource)} preload={preload} autoPlay={autoplay} muted={muted} loop={loop} poster={started ? undefined : poster} playsInline {...mediaEvents}>
         {captions.map((track) => <CaptionTrack key={track.src} track={track} onStatus={onCaptionStatus} />)}
         {chapters && <track src={chapters.src} srcLang={chapters.srcLang} label={chapters.label} kind="chapters" />}
       </video>
       {/* Video surface: never toggles playback. It only wakes the controls (via the container) and detects touch double-taps. */}
-      <div className="tap-surface" onPointerUp={onSurfacePointerUp} />
-      {seekFeedback && <div key={seekFeedback.id} className={`seek-feedback ${seekFeedback.side}`} aria-hidden="true">{seekFeedback.side === "back" ? <ChevronsLeft size={26} /> : <ChevronsRight size={26} />}<b>{seekStep} seconds</b></div>}
+      <div ref={surfaceRef} className="tap-surface" onPointerUp={onSurfacePointerUp} />
+      {seekFeedback && <div key={seekFeedback.id} className={`seek-feedback ${seekFeedback.side}`} aria-hidden="true">{seekFeedback.side === "back" ? <ChevronsLeft size={22} /> : <ChevronsRight size={22} />}<b>{seekStep} seconds</b></div>}
       {loading && <div className="player-loader" role="status" aria-label={hasLoaded ? "Buffering" : "Loading video"}><span className="loader-ring" /></div>}
       {state.error && <div className="media-error" role="alert"><X size={20} /><strong>Unable to load video</strong><button type="button" onClick={retry}>Retry</button></div>}
       {notice && <div className="media-notice" role="status">{notice}</div>}
