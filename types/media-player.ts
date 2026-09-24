@@ -12,7 +12,7 @@ export type MediaPlayerState = {
   buffering: boolean; fullscreen: boolean; pictureInPicture: boolean; playbackRate: number; quality?: string;
   captionsEnabled: boolean; controlsVisible: boolean; error?: MediaPlayerError;
 };
-export type MediaPlayerControls = { play?: boolean; volume?: boolean; progress?: boolean; captions?: boolean; settings?: boolean; fullscreen?: boolean; pictureInPicture?: boolean };
+export type MediaPlayerControls = { play?: boolean; volume?: boolean; progress?: boolean; captions?: boolean; settings?: boolean; speed?: boolean; quality?: boolean; fullscreen?: boolean; pictureInPicture?: boolean; previous?: boolean; next?: boolean };
 export type MediaPlayerRef = {
   play: () => Promise<void>; pause: () => void; togglePlay: () => Promise<void>; seek: (time: number) => void;
   setVolume: (volume: number) => void; toggleMute: () => void; setPlaybackRate: (rate: number) => void;
@@ -23,6 +23,8 @@ export type MediaPlayerProps = {
   src: MediaSource; poster?: string; preload?: MediaPreload; autoplay?: boolean; muted?: boolean; loop?: boolean;
   controls?: boolean | MediaPlayerControls; captions?: MediaTrack[]; chapters?: MediaTrack; quality?: MediaQuality[];
   playbackRate?: boolean; playbackRates?: number[]; seekStep?: number; keyboardShortcuts?: boolean;
+  doubleTapSeek?: boolean; landscapeOnFullscreen?: boolean;
+  hasPrevious?: boolean; hasNext?: boolean; onPrevious?: () => void; onNext?: () => void;
   mediaSession?: MediaSessionMetadata; className?: string; accent?: string; ref?: Ref<MediaPlayerRef>;
   onPlay?: () => void; onPause?: () => void; onEnded?: () => void; onTimeUpdate?: (currentTime: number) => void;
   onProgress?: (buffered: number) => void; onLoadedMetadata?: (duration: number) => void; onWaiting?: () => void;

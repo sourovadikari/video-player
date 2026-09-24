@@ -42,8 +42,8 @@ const useIsTouch = () => useSyncExternalStore(subscribeTouch, () => window.match
 const noopSubscribe = () => () => undefined;
 const usePictureInPictureSupport = () => useSyncExternalStore(noopSubscribe, () => Boolean(document.pictureInPictureEnabled), () => false);
 
-function IconButton({ label, onClick, active = false, className = "", children }: { label: string; onClick: () => void; active?: boolean; className?: string; children: ReactNode }) {
-  return <button type="button" className={`player-button ${active ? "is-active" : ""} ${className}`} onClick={onClick} aria-label={label} title={label}>{children}</button>;
+function IconButton({ label, onClick, active = false, disabled = false, className = "", children }: { label: string; onClick: () => void; active?: boolean; disabled?: boolean; className?: string; children: ReactNode }) {
+  return <button type="button" className={`player-button ${active ? "is-active" : ""} ${className}`} onClick={onClick} disabled={disabled} aria-label={label} title={label}>{children}</button>;
 }
 
 /** Reports whether a caption file really loaded, so CC only renders for captions that exist. */
@@ -65,7 +65,7 @@ function CaptionTrack({ track, onStatus }: { track: MediaTrack; onStatus: (src: 
 }
 
 export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function MediaPlayer({
-  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
+  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, doubleTapSeek = true, landscapeOnFullscreen = true, hasPrevious = false, hasNext = false, onPrevious, onNext, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
 }, ref) {
   const mediaRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
@@ -84,6 +84,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const isTouch = useIsTouch();
   const pictureInPictureSupported = usePictureInPictureSupport();
   const touchRef = useRef(isTouch);
+  const landscapeRef = useRef(landscapeOnFullscreen);
+  useEffect(() => { landscapeRef.current = landscapeOnFullscreen; }, [landscapeOnFullscreen]);
 
   const sourceKey = sourceValue(src);
   const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
@@ -115,17 +117,25 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   // encoded resolution, so listing 360p/720p/1080p for it would be fake; real switching needs several files or HLS/DASH.
   const hasQuality = quality.length > 0;
   const speedOptions = playbackRate ? playbackRates : [];
-  const hasSettings = speedOptions.length > 0 || hasQuality;
   const readyCaptions = captions.filter((track) => captionStatus[track.src] === true);
   const overrides: MediaPlayerControls = typeof controls === "object" ? controls : {};
+  // "Show Playback speed" / "Show Quality" gate the individual settings rows; the Settings button itself
+  // only appears when at least one of those rows would actually have something to show.
+  const showSpeed = (overrides.speed ?? true) && speedOptions.length > 0;
+  const showQuality = (overrides.quality ?? true) && hasQuality;
   const config: Required<MediaPlayerControls> = {
     play: overrides.play ?? true,
     volume: (overrides.volume ?? true) && !isTouch,
     progress: overrides.progress ?? true,
     captions: (overrides.captions ?? true) && readyCaptions.length > 0,
-    settings: (overrides.settings ?? true) && hasSettings,
+    settings: (overrides.settings ?? true) && (showSpeed || showQuality),
+    speed: showSpeed,
+    quality: showQuality,
     fullscreen: overrides.fullscreen ?? true,
     pictureInPicture: (overrides.pictureInPicture ?? true) && pictureInPictureSupported && !isTouch,
+    // Previous/Next are never faked: they only appear when the caller actually wires up a playlist.
+    previous: (overrides.previous ?? true) && Boolean(onPrevious),
+    next: (overrides.next ?? true) && Boolean(onNext),
   };
   const hasControls = controls !== false;
   const activeSource = qualityLabel === DEFAULT_QUALITY ? src : quality.find((item) => item.label === qualityLabel)?.src ?? src;
@@ -206,7 +216,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
       latest.current.onFullscreenChange?.(fullscreen);
       const orientation = screen.orientation as LockableOrientation | undefined;
       try {
-        if (fullscreen && touchRef.current) void orientation?.lock?.("landscape")?.catch(() => undefined);
+        if (fullscreen && touchRef.current && landscapeRef.current) void orientation?.lock?.("landscape")?.catch(() => undefined);
         else if (!fullscreen) orientation?.unlock?.();
       } catch { /* Orientation lock is unsupported (desktop, iOS). Fullscreen still works. */ }
     };
@@ -295,7 +305,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     changeMenu(null);
   };
 
-  // ---- double tap (touch only, on the dedicated surface, so controls can never trigger it) ----
+  // ---- double tap / double click (touch + mouse, on the dedicated surface, so controls can never trigger it) ----
   const skip = (side: "back" | "forward") => {
     seekBy(side === "forward" ? seekStep : -seekStep);
     setSeekFeedback({ side, id: Date.now() });
@@ -314,7 +324,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const onSurfacePointerUp = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     if (performance.now() < ignoreTapUntil.current) return; // this press only closed a menu
-    if (event.pointerType !== "touch") { toggleControls(event.clientX, event.clientY); return; }
+    if (!doubleTapSeek) { toggleControls(event.clientX, event.clientY); return; }
     const bounds = event.currentTarget.getBoundingClientRect();
     const side = event.clientX < bounds.left + bounds.width / 2 ? "back" : "forward";
     const now = performance.now();
@@ -396,8 +406,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
         <div className="player-menu" role="menu">
           {isTouch && <div className="menu-handle" aria-hidden="true" />}
           {menu === "main" && <>
-            {speedOptions.length > 0 && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={ICON_MENU} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
-            {hasQuality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={ICON_MENU} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
+            {config.speed && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={ICON_MENU} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
+            {config.quality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={ICON_MENU} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
           </>}
           {menu === "speed" && <>
             <button type="button" className="menu-back" onClick={() => changeMenu("main")}><b><ArrowLeft size={16} />Playback speed</b></button>
@@ -421,8 +431,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
       {progress}
       <div className="control-row">
         {playPause}
-        <IconButton label={`Back ${seekStep} seconds`} onClick={() => seekBy(-seekStep)}><SkipBack size={ICON_DESKTOP} /></IconButton>
-        <IconButton label={`Forward ${seekStep} seconds`} onClick={() => seekBy(seekStep)}><SkipForward size={ICON_DESKTOP} /></IconButton>
+        {config.previous && <IconButton label="Previous video" disabled={!hasPrevious} onClick={() => onPrevious?.()}><SkipBack size={ICON_DESKTOP} /></IconButton>}
+        {config.next && <IconButton label="Next video" disabled={!hasNext} onClick={() => onNext?.()}><SkipForward size={ICON_DESKTOP} /></IconButton>}
         {config.volume && (
           <div className="volume-group">
             <IconButton label={state.muted ? "Unmute" : "Mute"} onClick={toggleMute}><VolumeIcon size={ICON_DESKTOP} /></IconButton>
@@ -445,10 +455,10 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     <div className="player-controls touch">
       <div className="touch-top">{captionsButton}{settingsButton}</div>
       <div className="touch-center">
-        <IconButton label={`Back ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(-seekStep)}><SkipBack size={ICON_TOUCH} /></IconButton>
+        {config.previous && <IconButton label="Previous video" className="touch-skip" disabled={!hasPrevious} onClick={() => onPrevious?.()}><SkipBack size={ICON_TOUCH} /></IconButton>}
         {!loading && playPause}
         {loading && <span className="touch-center-spacer" />}
-        <IconButton label={`Forward ${seekStep} seconds`} className="touch-skip" onClick={() => seekBy(seekStep)}><SkipForward size={ICON_TOUCH} /></IconButton>
+        {config.next && <IconButton label="Next video" className="touch-skip" disabled={!hasNext} onClick={() => onNext?.()}><SkipForward size={ICON_TOUCH} /></IconButton>}
       </div>
       <div className="touch-bottom"><div className="touch-meta">{time}{fullscreenButton}</div>{progress}</div>
     </div>

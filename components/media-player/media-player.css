@@ -23,6 +23,7 @@
 .player-button{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:#fff;cursor:pointer}
 .player-button:hover,.player-button.is-active{background:rgba(255,255,255,.14)}
 .player-button:focus-visible{outline:2px solid var(--player-accent);outline-offset:2px}
+.player-button:disabled{opacity:.35;cursor:default;pointer-events:none}
 .time-label{flex:0 0 auto;margin:0 10px;color:#fff;font:500 .78rem var(--font-mono),ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* ---------- Progress: ONE range input. rail = duration, white = buffered, accent = played, native thumb = the only thumb ---------- */
@@ -48,8 +49,10 @@
 .volume-range::-webkit-slider-runnable-track{height:2px;border-radius:2px;background:linear-gradient(to right,#fff var(--range-fill),rgba(255,255,255,.3) var(--range-fill))}
 .volume-range::-moz-range-track{height:2px;border-radius:2px;background:rgba(255,255,255,.3)}
 .volume-range::-moz-range-progress{height:2px;border-radius:2px;background:#fff}
-.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:9px;margin-top:-3.5px;border:0;border-radius:50%;background:#fff}
-.volume-range::-moz-range-thumb{width:9px;height:9px;border:0;border-radius:50%;background:#fff}
+.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:var(--thumb);height:var(--thumb);margin-top:-4px;border:0;border-radius:50%;background:#fff;transform:scale(.9);transition:transform .12s ease}
+.volume-range::-moz-range-thumb{width:var(--thumb);height:var(--thumb);border:0;border-radius:50%;background:#fff;transform:scale(.9);transition:transform .12s ease}
+.volume-range:hover::-webkit-slider-thumb,.volume-range:active::-webkit-slider-thumb,.volume-range:focus-visible::-webkit-slider-thumb{transform:scale(1)}
+.volume-range:hover::-moz-range-thumb,.volume-range:active::-moz-range-thumb,.volume-range:focus-visible::-moz-range-thumb{transform:scale(1)}
 .volume-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:3px;border-radius:4px}
 
 /* ---------- Settings menu ---------- */
