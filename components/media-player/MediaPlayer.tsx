@@ -112,11 +112,13 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const showSpeed = (overrides.speed ?? true) && speedOptions.length > 0;
   const showQuality = (overrides.quality ?? true) && hasQuality;
   const config: Required<MediaPlayerControls> = {
-    play: overrides.play ?? true,
+    play: overrides.playPause ?? overrides.play ?? true,
+    playPause: overrides.playPause ?? overrides.play ?? true,
     volume: (overrides.volume ?? true) && !isTouch,
-    progress: overrides.progress ?? true,
+    progress: (overrides.progress ?? true) && (overrides.seek ?? true),
+    seek: overrides.seek ?? true,
     captions: (overrides.captions ?? true) && readyCaptions.length > 0,
-    settings: (overrides.settings ?? true) && (showSpeed || showQuality),
+    settings: (overrides.settings ?? true) && (showSpeed || showQuality || readyCaptions.length > 0 || pictureInPictureSupported),
     speed: showSpeed,
     quality: showQuality,
     fullscreen: overrides.fullscreen ?? true,
@@ -363,7 +365,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
       patch({ volume: media.volume, muted: media.muted, playbackRate: media.playbackRate, error: undefined });
       onLoadedMetadata?.(safeDuration(media.duration));
     },
-    onLoadStart: () => { if (resumeRef.current) patch({ buffering: true }); },
+    onLoadStart: () => { setHasLoaded(false); setStarted(false); patch({ currentTime: 0, duration: 0, buffered: 0, playing: false, buffering: true, error: undefined }); },
     onCanPlay: () => { setHasLoaded(true); patch({ buffering: false }); },
     onWaiting: () => { patch({ buffering: true }); onWaiting?.(); },
     onPlaying: () => { patch({ buffering: false }); onPlaying?.(); },

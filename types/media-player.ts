@@ -15,7 +15,7 @@ export type MediaPlayerState = {
   buffering: boolean; fullscreen: boolean; pictureInPicture: boolean; playbackRate: number; quality?: string;
   captionsEnabled: boolean; controlsVisible: boolean; error?: MediaPlayerError;
 };
-export type MediaPlayerControls = { play?: boolean; volume?: boolean; progress?: boolean; captions?: boolean; settings?: boolean; speed?: boolean; quality?: boolean; fullscreen?: boolean; pictureInPicture?: boolean; previous?: boolean; next?: boolean };
+export type MediaPlayerControls = { play?: boolean; playPause?: boolean; volume?: boolean; progress?: boolean; seek?: boolean; captions?: boolean; settings?: boolean; speed?: boolean; quality?: boolean; fullscreen?: boolean; pictureInPicture?: boolean; previous?: boolean; next?: boolean };
 export type MediaPlayerRef = {
   play: () => Promise<void>; pause: () => void; togglePlay: () => Promise<void>; seek: (time: number) => void;
   setVolume: (volume: number) => void; toggleMute: () => void; setPlaybackRate: (rate: number) => void;
@@ -43,9 +43,12 @@ export type PlaylistVideoRecord = {
   sourceUrl: string;
   provider: VideoSourceProvider;
   thumbnail?: string;
+  duration?: number;
+  category?: string;
   mimeType?: string;
   order: number;
   src: string;
   captions?: MediaTrack[];
   qualities?: MediaQuality[];
 };
+export type Video = PlaylistVideoRecord;

@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# signalplay
 
-## Getting Started
+A reusable, accessible HTML5 MediaPlayer for Next.js and React. It supports public MP4 sources, Cloudinary delivery, local media, playlists, captions, real quality variants, keyboard controls, fullscreen, and native Picture-in-Picture.
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`. Use `npm run lint`, `npx tsc --noEmit`, and `npm run build` before shipping.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Basic usage
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```tsx
+import { MediaPlayer } from "@/components/media-player";
 
-## Learn More
+<MediaPlayer
+  src="https://res.cloudinary.com/dddgc0vaq/video/upload/v1790228341/pejn3wrjkaosd2yiiidi.mp4?_s=public-apps"
+  controls
+  seekStep={10}
+  accent="#c8f169"
+/>
+```
 
-To learn more about Next.js, take a look at the following resources:
+`controls` accepts `true`, `false`, or a typed `MediaPlayerControls` object. The current object keys are `play`, `playPause`, `volume`, `progress`, `seek`, `captions`, `quality`, `settings`, `speed`, `pictureInPicture`, `fullscreen`, `previous`, and `next`. `playPause` and `seek` are explicit aliases; the older `play` and `progress` keys remain supported.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Props
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- `src`: a browser-playable URL or `{ src, type }` media source.
+- `poster`: optional poster image.
+- `controls`: all controls or a per-control configuration object.
+- `autoplay`, `muted`, `loop`: native playback behavior.
+- `autoNext`: calls `onNext` when the source ends and `hasNext` is true.
+- `seekStep`: seconds used by keyboard and double-tap seeking; defaults to `10`.
+- `captions`: optional WebVTT `MediaTrack[]`; CC appears only after a track loads.
+- `quality`: optional real alternate `MediaQuality[]`; Quality is hidden when absent.
+- `hasPrevious`, `hasNext`, `onPrevious`, `onNext`: host-owned playlist navigation.
+- `doubleTapSeek`, `landscapeOnFullscreen`, and `keyboardShortcuts`: interaction options.
+- `accent`: CSS color used for the player’s active states.
 
-## Deploy on Vercel
+The player never parses routes, imports application data, or assumes Cloudinary. It only receives sources and callbacks.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Playlist data
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The demo data lives in `lib/playlist.ts`. A reusable record supports `id`, `title`, `description`, `src`, `poster`/`thumbnail`, `duration`, `category`, `captions`, `qualities`, provider metadata, and order. The host calculates the active index and owns previous/next callbacks.
+
+```tsx
+const current = videos[index];
+
+<MediaPlayer
+  src={current.src}
+  captions={current.captions}
+  quality={current.qualities}
+  hasPrevious={index > 0}
+  hasNext={index < videos.length - 1}
+  onPrevious={() => setIndex((value) => Math.max(0, value - 1))}
+  onNext={() => setIndex((value) => Math.min(videos.length - 1, value + 1))}
+  autoNext
+/>
+```
+
+## Captions and quality
+
+Captions use standard WebVTT files:
+
+```tsx
+captions={[{
+  src: "/demo-captions.vtt",
+  srcLang: "en",
+  language: "en",
+  label: "English",
+  default: true,
+}]}
+```
+
+Quality entries must point to actual encoded alternatives or real provider transformations. Do not list fake resolutions. The demo Cloudinary records contain low and high transformation URLs; the local demo intentionally has no fake quality selector.
+
+## Cloudinary and local videos
+
+Use Cloudinary’s individual delivery URL, never a collection or preview page. Local files in `public/media` are referenced as `/media/demo.mp4`, without `/public` in the URL.
+
+## Routes
+
+- `/`: product overview and a working local preview.
+- `/videos`: lightweight gallery with posters and source metadata.
+- `/videos/[id]`: dynamic player page with route-aware previous/next navigation.
+- `/playground`: live configuration and playlist test environment.
+- `/examples`: focused Cloudinary, local, captions, quality, and playlist examples.
+- `/docs`: current API documentation.
+
+## Browser behavior
+
+Play/pause is controlled by the player button or keyboard. The video surface only shows or hides controls. Desktop volume controls are omitted on touch layouts. PiP and fullscreen buttons are capability-driven and use native browser APIs. Space/K toggles playback, Arrow Left/Right seeks, Arrow Up/Down adjusts volume, M mutes, F toggles fullscreen, and C toggles captions.

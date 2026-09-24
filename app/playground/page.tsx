@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { MediaPlayer } from "@/components/media-player";
+import { SiteNav } from "@/components/site/SiteNav";
 import { PLAYLIST } from "@/lib/playlist";
 import type { MediaPlayerControls } from "@/types/media-player";
 
@@ -10,7 +10,7 @@ const SKIP_PRESETS = [5, 10, 15, 30];
 
 type ControlKey = keyof MediaPlayerControls;
 const CONTROL_TOGGLES: { key: ControlKey; label: string }[] = [
-  { key: "play", label: "Play / Pause" },
+  { key: "playPause", label: "Play / Pause" },
   { key: "previous", label: "Previous Video" },
   { key: "next", label: "Next Video" },
   { key: "volume", label: "Volume (desktop only)" },
@@ -37,7 +37,7 @@ export default function PlaygroundPage() {
   const [videoIndex, setVideoIndex] = useState(0);
   const [copied, setCopied] = useState(false);
   const [controls, setControls] = useState<Required<MediaPlayerControls>>({
-    play: true, previous: true, next: true, volume: true, progress: true,
+    play: true, playPause: true, seek: true, previous: true, next: true, volume: true, progress: true,
     settings: true, speed: true, quality: true, captions: true, pictureInPicture: true, fullscreen: true,
   });
 
@@ -61,12 +61,13 @@ export default function PlaygroundPage() {
       `  seekStep={${seekStep}}`,
       doubleTapSeek ? "" : "  doubleTapSeek={false}",
       landscapeOnFullscreen ? "" : "  landscapeOnFullscreen={false}",
-      playlistEnabled ? "  hasPrevious={/* real */} hasNext={/* real */} onPrevious={...} onNext={...}" : "",
+      playlistEnabled ? `  hasPrevious={${hasPrevious}} hasNext={${hasNext}}` : "",
+      playlistEnabled ? "  onPrevious={handlePrevious} onNext={handleNext}" : "",
       `  accent="${accent}"`,
       "/>",
     ].filter(Boolean);
     return lines.join("\n");
-  }, [headless, controls, autoplay, muted, loop, autoNext, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, video.src]);
+  }, [headless, controls, autoplay, muted, loop, autoNext, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, video.src, hasPrevious, hasNext]);
 
   const copyCode = async () => {
     try {
@@ -80,11 +81,7 @@ export default function PlaygroundPage() {
 
   return (
     <main className="app-shell">
-      <nav className="site-nav inner-nav">
-        <Link className="brand" href="/">signal<span>play</span></Link>
-        <div className="nav-links"><Link href="/docs">Docs</Link><Link href="/examples">Examples</Link></div>
-        <Link className="nav-cta" href="/">Back home <span>↗</span></Link>
-      </nav>
+      <SiteNav />
       <section className="tool-header">
         <span className="section-kicker">Playground / live configuration</span>
         <h1>Shape the player.</h1>
