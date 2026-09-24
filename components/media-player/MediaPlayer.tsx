@@ -40,7 +40,7 @@ function bufferedEnd(media: HTMLVideoElement, time: number) {
 const subscribeTouch = (notify: () => void) => { const query = window.matchMedia(TOUCH_QUERY); query.addEventListener("change", notify); return () => query.removeEventListener("change", notify); };
 const useIsTouch = () => useSyncExternalStore(subscribeTouch, () => window.matchMedia(TOUCH_QUERY).matches, () => false);
 const noopSubscribe = () => () => undefined;
-const usePictureInPictureSupport = () => useSyncExternalStore(noopSubscribe, () => Boolean(document.pictureInPictureEnabled), () => false);
+const usePictureInPictureSupport = () => useSyncExternalStore(noopSubscribe, () => Boolean(document.pictureInPictureEnabled && "requestPictureInPicture" in HTMLVideoElement.prototype), () => false);
 
 function IconButton({ label, onClick, active = false, disabled = false, className = "", children }: { label: string; onClick: () => void; active?: boolean; disabled?: boolean; className?: string; children: ReactNode }) {
   return <button type="button" className={`player-button ${active ? "is-active" : ""} ${className}`} onClick={onClick} disabled={disabled} aria-label={label} title={label}>{children}</button>;
@@ -120,7 +120,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     speed: showSpeed,
     quality: showQuality,
     fullscreen: overrides.fullscreen ?? true,
-    pictureInPicture: (overrides.pictureInPicture ?? true) && pictureInPictureSupported && !isTouch,
+    pictureInPicture: (overrides.pictureInPicture ?? true) && pictureInPictureSupported,
     // Previous/Next are never faked: they only appear when the caller actually wires up a playlist.
     previous: (overrides.previous ?? true) && Boolean(onPrevious),
     next: (overrides.next ?? true) && Boolean(onNext),
@@ -452,7 +452,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   // Touch layout follows the mobile reference: CC + settings top-right, transport centered, time + fullscreen + progress at the bottom.
   const touchControls = (
     <div className="player-controls touch">
-      <div className="touch-top">{captionsButton}{settingsButton}</div>
+      <div className="touch-top">{captionsButton}{settingsButton}{config.pictureInPicture && <IconButton label="Picture-in-Picture" onClick={() => void (state.pictureInPicture ? exitPictureInPicture() : enterPictureInPicture())} active={state.pictureInPicture}><PictureInPicture2 size={ICON_TOUCH} /></IconButton>}</div>
       <div className="touch-center">
         {config.previous && <IconButton label="Previous video" className="touch-skip" disabled={!hasPrevious} onClick={() => onPrevious?.()}><SkipBack size={ICON_TOUCH} /></IconButton>}
         {!loading && playPause}
