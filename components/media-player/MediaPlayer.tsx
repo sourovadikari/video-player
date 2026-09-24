@@ -61,11 +61,11 @@ function CaptionTrack({ track, onStatus }: { track: MediaTrack; onStatus: (src: 
     else if (element.readyState === 3) failed();
     return () => { element.removeEventListener("load", loaded); element.removeEventListener("error", failed); };
   }, [src, onStatus]);
-  return <track ref={ref} src={src} srcLang={srcLang} label={label} kind={kind} />;
+  return <track ref={ref} src={src} srcLang={srcLang ?? track.language ?? "en"} label={label} kind={kind} />;
 }
 
 export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function MediaPlayer({
-  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, doubleTapSeek = true, landscapeOnFullscreen = true, hasPrevious = false, hasNext = false, onPrevious, onNext, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
+  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, autoNext = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, doubleTapSeek = true, landscapeOnFullscreen = true, hasPrevious = false, hasNext = false, onPrevious, onNext, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
 }, ref) {
   const mediaRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
@@ -88,7 +88,6 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   useEffect(() => { landscapeRef.current = landscapeOnFullscreen; }, [landscapeOnFullscreen]);
 
   const sourceKey = sourceValue(src);
-  const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
   const [state, setState] = useState<MediaPlayerState>({ playing: false, currentTime: 0, duration: 0, volume: 1, muted, buffered: 0, buffering: false, fullscreen: false, pictureInPicture: false, playbackRate: 1, quality: quality.length > 0 ? DEFAULT_QUALITY : undefined, captionsEnabled: captions.some((track) => track.default), controlsVisible: true });
   const [menu, setMenu] = useState<"main" | "speed" | "quality" | null>(null);
   const [dragging, setDragging] = useState<Drag>(null);
@@ -101,17 +100,6 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const [captionStatus, setCaptionStatus] = useState<Record<string, boolean>>({});
 
   const patch = useCallback((next: Partial<MediaPlayerState>) => setState((current) => (Object.keys(next) as (keyof MediaPlayerState)[]).some((key) => !Object.is(current[key], next[key])) ? { ...current, ...next } : current), []);
-
-  // A new source starts a new playback session (state reset during render, not in an effect).
-  if (prevSourceKey !== sourceKey) {
-    setPrevSourceKey(sourceKey);
-    setMenu(null);
-    setHasLoaded(false);
-    setStarted(false);
-    setUserHidden(false);
-    setQualityLabel(DEFAULT_QUALITY);
-    setState((current) => ({ ...current, currentTime: 0, duration: 0, buffered: 0, playing: false, buffering: false, quality: quality.length > 0 ? DEFAULT_QUALITY : undefined, error: undefined }));
-  }
 
   // Quality is only offered when the caller supplies REAL alternative sources. A single MP4 has exactly one
   // encoded resolution, so listing 360p/720p/1080p for it would be fake; real switching needs several files or HLS/DASH.
@@ -351,7 +339,15 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const mediaEvents = {
     onPlay: () => { setHasLoaded(true); setStarted(true); patch({ playing: true, buffering: false }); wake(); onPlay?.(); },
     onPause: () => { patch({ playing: false }); onPause?.(); },
-    onEnded: () => { patch({ playing: false, controlsVisible: true }); syncMedia(true); onEnded?.(); },
+    onEnded: () => {
+      patch({ playing: false, controlsVisible: true });
+      syncMedia(true);
+      if (autoNext && hasNext && onNext) {
+        onNext();
+        return;
+      }
+      onEnded?.();
+    },
     onTimeUpdate: () => { syncMedia(); latest.current.onTimeUpdate?.(mediaRef.current?.currentTime ?? 0); },
     onProgress: () => { syncMedia(); const media = mediaRef.current; const duration = safeDuration(media?.duration ?? 0); if (media && duration > 0) latest.current.onProgress?.(clamp(bufferedEnd(media, media.currentTime) / duration, 0, 1)); },
     onDurationChange: () => syncMedia(true),
@@ -406,8 +402,11 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
         <div className="player-menu" role="menu">
           {isTouch && <div className="menu-handle" aria-hidden="true" />}
           {menu === "main" && <>
+            <div className="menu-heading">Player settings</div>
             {config.speed && <button type="button" role="menuitem" onClick={() => changeMenu("speed")}><b><Gauge size={ICON_MENU} />Playback speed</b><span>{formatRate(state.playbackRate)}<ChevronRight size={14} /></span></button>}
             {config.quality && <button type="button" role="menuitem" onClick={() => changeMenu("quality")}><b><SlidersHorizontal size={ICON_MENU} />Quality</b><span>{state.quality ?? DEFAULT_QUALITY}<ChevronRight size={14} /></span></button>}
+            {config.captions && <button type="button" role="menuitemcheckbox" aria-checked={state.captionsEnabled} onClick={toggleCaptions}><b><Captions size={ICON_MENU} />Captions</b><span>{state.captionsEnabled ? "On" : "Off"}</span></button>}
+            {config.pictureInPicture && <button type="button" role="menuitem" onClick={() => void (state.pictureInPicture ? exitPictureInPicture() : enterPictureInPicture())}><b><PictureInPicture2 size={ICON_MENU} />Picture-in-Picture</b><span>{state.pictureInPicture ? "On" : "Off"}</span></button>}
           </>}
           {menu === "speed" && <>
             <button type="button" className="menu-back" onClick={() => changeMenu("main")}><b><ArrowLeft size={16} />Playback speed</b></button>

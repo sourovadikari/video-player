@@ -11,7 +11,8 @@ export function VideoDetailPlayer({ video, previous, next }: { video: PlaylistVi
       key={video.id}
       src={video.src}
       captions={video.captions}
-      chapters={{ src: "/demo-chapters.vtt", srcLang: "en", label: "Chapters", kind: "chapters" }}
+      quality={video.qualities}
+      chapters={video.provider === "local" ? { src: "/demo-chapters.vtt", srcLang: "en", label: "Chapters", kind: "chapters" } : undefined}
       hasPrevious={Boolean(previous)}
       hasNext={Boolean(next)}
       onPrevious={previous ? () => router.push(`/videos/${previous.id}`) : undefined}

@@ -28,6 +28,7 @@ export default function PlaygroundPage() {
   const [autoplay, setAutoplay] = useState(false);
   const [muted, setMuted] = useState(false);
   const [loop, setLoop] = useState(false);
+  const [autoNext, setAutoNext] = useState(false);
   const [accent, setAccent] = useState("#c8f169");
   const [doubleTapSeek, setDoubleTapSeek] = useState(true);
   const [seekStep, setSeekStep] = useState(10);
@@ -56,6 +57,7 @@ export default function PlaygroundPage() {
       autoplay ? "  autoplay" : "",
       muted ? "  muted" : "",
       loop ? "  loop" : "",
+      autoNext ? "  autoNext" : "",
       `  seekStep={${seekStep}}`,
       doubleTapSeek ? "" : "  doubleTapSeek={false}",
       landscapeOnFullscreen ? "" : "  landscapeOnFullscreen={false}",
@@ -64,7 +66,7 @@ export default function PlaygroundPage() {
       "/>",
     ].filter(Boolean);
     return lines.join("\n");
-  }, [headless, controls, autoplay, muted, loop, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, video.src]);
+  }, [headless, controls, autoplay, muted, loop, autoNext, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, video.src]);
 
   const copyCode = async () => {
     try {
@@ -95,10 +97,12 @@ export default function PlaygroundPage() {
             key={`${video.id}-${headless}`}
             src={video.src}
             captions={video.captions}
+            quality={video.qualities}
             controls={headless ? false : controls}
             autoplay={autoplay}
             muted={muted}
             loop={loop}
+            autoNext={autoNext}
             accent={accent}
             seekStep={seekStep}
             doubleTapSeek={doubleTapSeek}
@@ -112,6 +116,16 @@ export default function PlaygroundPage() {
             <span>{video.title}</span>
             <span>{headless ? "Headless mode" : "Default controls"}</span>
           </div>
+          {playlistEnabled && (
+            <div className="playlist-rail" aria-label="Video playlist">
+              {PLAYLIST.map((item, index) => (
+                <button type="button" key={item.id} className={`playlist-item ${index === videoIndex ? "selected" : ""}`} onClick={() => setVideoIndex(index)} aria-current={index === videoIndex ? "true" : undefined}>
+                  <span className="playlist-index">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="playlist-copy"><strong>{item.title}</strong><small>{item.provider}</small></span>
+                </button>
+              ))}
+            </div>
+          )}
         </section>
         <aside className="config-panel">
           <div className="panel-top"><span>Configuration</span><span className="mono-label">props</span></div>
@@ -120,6 +134,7 @@ export default function PlaygroundPage() {
           <label className="toggle-row"><span>Autoplay</span><input type="checkbox" checked={autoplay} onChange={(event) => setAutoplay(event.target.checked)} /></label>
           <label className="toggle-row"><span>Muted on load</span><input type="checkbox" checked={muted} onChange={(event) => setMuted(event.target.checked)} /></label>
           <label className="toggle-row"><span>Loop</span><input type="checkbox" checked={loop} onChange={(event) => setLoop(event.target.checked)} /></label>
+          <label className="toggle-row"><span>Auto Next</span><input type="checkbox" checked={autoNext} onChange={(event) => setAutoNext(event.target.checked)} /></label>
           <label className="toggle-row"><span>Headless (no UI at all)</span><input type="checkbox" checked={headless} onChange={(event) => setHeadless(event.target.checked)} /></label>
 
           <span className="field-label">Controls shown{headless ? " (n/a — headless)" : ""}</span>

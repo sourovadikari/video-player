@@ -26,39 +26,35 @@
 .player-button:disabled{opacity:.35;cursor:default;pointer-events:none}
 .time-label{flex:0 0 auto;margin:0 10px;color:#fff;font:500 .78rem var(--font-mono),ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
 
-/* ---------- Progress: ONE range input. rail = duration, white = buffered, accent = played, native thumb = the only thumb ---------- */
-.progress-wrap{position:relative;height:16px;margin:0 0 4px;touch-action:none;--pct:0;--buf:0}
-.progress-rail,.progress-buffered,.progress-played{position:absolute;left:0;top:7px;height:2px;border-radius:2px;pointer-events:none;transition:height .12s ease,top .12s ease}
+/* ---------- Progress: single interactive range with a fixed track geometry. ---------- */
+.progress-wrap{position:relative;height:26px;margin:0 0 4px;touch-action:none;--pct:0;--buf:0}
+.progress-rail,.progress-buffered,.progress-played{position:absolute;left:0;top:50%;height:2px;border-radius:999px;pointer-events:none;transform:translateY(-50%)}
 .progress-rail{right:0;background:rgba(255,255,255,.3)}
-.progress-buffered{width:calc(var(--buf) * 100%);background:rgba(255,255,255,.65)}
-.progress-played{width:calc(var(--pct) * (100% - var(--thumb)) + min(1, var(--pct) * 1000) * var(--thumb) / 2);background:var(--player-accent)}
-.progress-wrap:hover .progress-rail,.progress-wrap:hover .progress-buffered,.progress-wrap:hover .progress-played,.progress-wrap.is-dragging .progress-rail,.progress-wrap.is-dragging .progress-buffered,.progress-wrap.is-dragging .progress-played{top:6px;height:4px}
-.progress-range{position:absolute;inset:0;z-index:2;width:100%;height:16px;margin:0;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
+.progress-buffered{width:calc(var(--buf) * 100%);background:rgba(255,255,255,.7)}
+.progress-played{width:calc(var(--pct) * 100%);background:var(--player-accent)}
+.progress-range{position:absolute;inset:0;z-index:2;width:100%;height:26px;margin:0;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
 .progress-range:disabled{cursor:default}
-.progress-range::-webkit-slider-runnable-track{height:16px;background:transparent;border:0}
-.progress-range::-moz-range-track{height:16px;background:transparent;border:0}
-.progress-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:var(--thumb);height:var(--thumb);margin-top:3px;border:0;border-radius:50%;background:var(--player-accent);transform:scale(0);transition:transform .12s ease}
-.progress-range::-moz-range-thumb{width:var(--thumb);height:var(--thumb);border:0;border-radius:50%;background:var(--player-accent);transform:scale(0);transition:transform .12s ease}
-.progress-wrap:hover .progress-range::-webkit-slider-thumb,.progress-wrap.is-dragging .progress-range::-webkit-slider-thumb,.progress-range:focus-visible::-webkit-slider-thumb{transform:scale(1)}
-.progress-wrap:hover .progress-range::-moz-range-thumb,.progress-wrap.is-dragging .progress-range::-moz-range-thumb,.progress-range:focus-visible::-moz-range-thumb{transform:scale(1)}
+.progress-range::-webkit-slider-runnable-track{height:26px;background:transparent;border:0}
+.progress-range::-moz-range-track{height:26px;background:transparent;border:0}
+.progress-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:10px;margin-top:0;border:0;border-radius:50%;background:var(--player-accent);box-shadow:0 0 0 2px rgba(0,0,0,.16)}
+.progress-range::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:var(--player-accent);box-shadow:0 0 0 2px rgba(0,0,0,.16)}
 .progress-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:2px;border-radius:4px}
 
 /* ---------- Volume (desktop only; not rendered at all on touch devices) ---------- */
 .volume-group{display:flex;align-items:center;min-width:0}
-.volume-range{--range-fill:100%;width:72px;height:16px;margin:0 6px 0 2px;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none} /* appearance:none is REQUIRED or the pseudo-element styles below are ignored */
+.volume-range{--range-fill:100%;width:72px;height:18px;margin:0 6px 0 2px;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
 .volume-range::-webkit-slider-runnable-track{height:2px;border-radius:2px;background:linear-gradient(to right,#fff var(--range-fill),rgba(255,255,255,.3) var(--range-fill))}
 .volume-range::-moz-range-track{height:2px;border-radius:2px;background:rgba(255,255,255,.3)}
 .volume-range::-moz-range-progress{height:2px;border-radius:2px;background:#fff}
-.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:var(--thumb);height:var(--thumb);margin-top:-4px;border:0;border-radius:50%;background:#fff;transform:scale(.9);transition:transform .12s ease}
-.volume-range::-moz-range-thumb{width:var(--thumb);height:var(--thumb);border:0;border-radius:50%;background:#fff;transform:scale(.9);transition:transform .12s ease}
-.volume-range:hover::-webkit-slider-thumb,.volume-range:active::-webkit-slider-thumb,.volume-range:focus-visible::-webkit-slider-thumb{transform:scale(1)}
-.volume-range:hover::-moz-range-thumb,.volume-range:active::-moz-range-thumb,.volume-range:focus-visible::-moz-range-thumb{transform:scale(1)}
+.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:10px;margin-top:-4px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.18)}
+.volume-range::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.18)}
 .volume-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:3px;border-radius:4px}
 
 /* ---------- Settings menu ---------- */
 .player-menu-anchor{position:relative}
-.player-menu{position:absolute;right:0;bottom:48px;z-index:8;width:min(260px,calc(100vw - 24px));max-height:min(380px,calc(var(--player-h,480px) - 88px));overflow:auto;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(28,28,28,.94);backdrop-filter:blur(10px);box-shadow:0 12px 32px rgba(0,0,0,.45)}
+.player-menu{position:absolute;right:0;bottom:48px;z-index:8;width:min(260px,calc(100vw - 24px));max-height:min(380px,calc(var(--player-h,480px) - 88px));overflow:auto;padding:8px;border:1px solid rgba(255,255,255,.12);border-radius:12px;background:rgba(28,28,28,.94);backdrop-filter:blur(10px);box-shadow:0 12px 32px rgba(0,0,0,.45);transform-origin:bottom right;animation:menu-in .16s ease-out both}
 .player-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:40px;padding:8px 10px;border:0;border-radius:8px;background:transparent;color:#fff;text-align:left;font-size:.82rem;cursor:pointer}
+.menu-heading{padding:6px 10px 8px;color:rgba(255,255,255,.55);font:500 .62rem var(--font-mono),ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase}
 .player-menu button b{display:flex;align-items:center;gap:12px;font-weight:400}
 .player-menu button span{display:flex;align-items:center;gap:2px;color:#bdbdbd}
 .player-menu button:hover,.player-menu button:focus-visible,.player-menu button.selected{background:rgba(255,255,255,.1)}
@@ -108,5 +104,6 @@
 .is-touch .player-menu button{min-height:52px;font-size:.95rem}
 
 @keyframes player-spin{to{transform:rotate(360deg)}}
+@keyframes menu-in{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes seek-pop{0%{opacity:0}15%,75%{opacity:1}100%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.player-controls,.loader-ring,.seek-feedback,.progress-rail,.progress-buffered,.progress-played{animation:none;transition:none}}

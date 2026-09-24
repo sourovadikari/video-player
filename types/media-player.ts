@@ -3,9 +3,12 @@ import type { Ref } from "react";
 export type MediaPreload = "none" | "metadata" | "auto";
 export type MediaSource = string | { src: string; type?: string };
 export type MediaQuality = { label: string; src: MediaSource; width?: number; height?: number };
-export type MediaTrack = { src: string; srcLang: string; label: string; kind?: "subtitles" | "captions" | "chapters"; default?: boolean };
+export type VideoQuality = MediaQuality;
+export type MediaTrack = { src: string; srcLang?: string; language?: string; label: string; kind?: "subtitles" | "captions" | "chapters"; default?: boolean };
+export type CaptionTrack = MediaTrack;
 export type MediaSessionArtwork = { src: string; sizes?: string; type?: string };
 export type MediaSessionMetadata = { title: string; artist?: string; album?: string; artwork?: MediaSessionArtwork[] };
+export type VideoSourceProvider = "google-drive" | "cloudinary" | "remote" | "local";
 export type MediaPlayerError = { code?: number; message: string; nativeError?: MediaError | null };
 export type MediaPlayerState = {
   playing: boolean; currentTime: number; duration: number; volume: number; muted: boolean; buffered: number;
@@ -20,7 +23,7 @@ export type MediaPlayerRef = {
   exitPictureInPicture: () => Promise<void>; getState: () => MediaPlayerState;
 };
 export type MediaPlayerProps = {
-  src: MediaSource; poster?: string; preload?: MediaPreload; autoplay?: boolean; muted?: boolean; loop?: boolean;
+  src: MediaSource; poster?: string; preload?: MediaPreload; autoplay?: boolean; muted?: boolean; loop?: boolean; autoNext?: boolean;
   controls?: boolean | MediaPlayerControls; captions?: MediaTrack[]; chapters?: MediaTrack; quality?: MediaQuality[];
   playbackRate?: boolean; playbackRates?: number[]; seekStep?: number; keyboardShortcuts?: boolean;
   doubleTapSeek?: boolean; landscapeOnFullscreen?: boolean;
@@ -31,4 +34,18 @@ export type MediaPlayerProps = {
   onPlaying?: () => void; onVolumeChange?: (volume: number, muted: boolean) => void; onRateChange?: (rate: number) => void;
   onFullscreenChange?: (fullscreen: boolean) => void; onError?: (error: MediaPlayerError) => void;
   onQualityChange?: (quality: string) => void; onCaptionChange?: (enabled: boolean) => void; onSeek?: (time: number) => void;
+};
+
+export type PlaylistVideoRecord = {
+  id: string;
+  title: string;
+  description?: string;
+  sourceUrl: string;
+  provider: VideoSourceProvider;
+  thumbnail?: string;
+  mimeType?: string;
+  order: number;
+  src: string;
+  captions?: MediaTrack[];
+  qualities?: MediaQuality[];
 };
