@@ -7,6 +7,21 @@ import { PLAYLIST } from "@/lib/playlist";
 import type { MediaPlayerControls } from "@/types/media-player";
 
 const SKIP_PRESETS = [5, 10, 15, 30];
+const WATERMARK_EXAMPLE = `<MediaPlayer
+  src="https://res.cloudinary.com/dddgc0vaq/video/upload/v1790228449/ktezsr3lj5xhrvf7zg90.mp4?_s=public-apps"
+  controls={{ playPause: true, volume: true, progress: true, seek: true, captions: true, settings: true, speed: true, quality: true, pictureInPicture: true, fullscreen: true, previous: true, next: true }}
+  seekStep={10}
+  hasPrevious={false}
+  hasNext={true}
+  onPrevious={handlePrevious}
+  onNext={handleNext}
+  accent="#c8f169"
+  watermark={true}
+/>
+
+<MediaPlayer watermark={false} />
+<MediaPlayer watermark="SCA" />
+<MediaPlayer watermark="Custom Text" />`;
 
 type ControlKey = keyof MediaPlayerControls;
 const CONTROL_TOGGLES: { key: ControlKey; label: string }[] = [
@@ -34,6 +49,7 @@ export default function PlaygroundPage() {
   const [seekStep, setSeekStep] = useState(10);
   const [landscapeOnFullscreen, setLandscapeOnFullscreen] = useState(true);
   const [playlistEnabled, setPlaylistEnabled] = useState(true);
+  const [watermark, setWatermark] = useState<string | boolean>(true);
   const [videoIndex, setVideoIndex] = useState(0);
   const [copied, setCopied] = useState(false);
   const [controls, setControls] = useState<Required<MediaPlayerControls>>({
@@ -49,7 +65,8 @@ export default function PlaygroundPage() {
   const code = useMemo(() => {
     const controlsProp = headless
       ? "false"
-      : `{{ ${Object.entries(controls).filter(([, value]) => !value).map(([key]) => `${key}: false`).join(", ") || "/* all controls on */ "}}}`;
+      : `{ ${Object.entries(controls).filter(([, value]) => !value).map(([key]) => `${key}: false`).join(", ") || "/* all controls on */ "} }`;
+    const watermarkProp = typeof watermark === "string" ? JSON.stringify(watermark) : `{${watermark}}`;
     const lines = [
       "<MediaPlayer",
       `  src="${video.src}"`,
@@ -64,10 +81,11 @@ export default function PlaygroundPage() {
       playlistEnabled ? `  hasPrevious={${hasPrevious}} hasNext={${hasNext}}` : "",
       playlistEnabled ? "  onPrevious={handlePrevious} onNext={handleNext}" : "",
       `  accent="${accent}"`,
+      `  watermark=${watermarkProp}`,
       "/>",
     ].filter(Boolean);
     return lines.join("\n");
-  }, [headless, controls, autoplay, muted, loop, autoNext, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, video.src, hasPrevious, hasNext]);
+  }, [headless, controls, autoplay, muted, loop, autoNext, seekStep, doubleTapSeek, landscapeOnFullscreen, playlistEnabled, accent, watermark, video.src, hasPrevious, hasNext]);
 
   const copyCode = async () => {
     try {
@@ -101,6 +119,7 @@ export default function PlaygroundPage() {
             loop={loop}
             autoNext={autoNext}
             accent={accent}
+            watermark={watermark}
             seekStep={seekStep}
             doubleTapSeek={doubleTapSeek}
             landscapeOnFullscreen={landscapeOnFullscreen}
@@ -147,6 +166,13 @@ export default function PlaygroundPage() {
           <span className="field-label">Navigation</span>
           <label className="toggle-row"><span>Demo playlist (Previous / Next Video)</span><input type="checkbox" checked={playlistEnabled} onChange={(event) => { setPlaylistEnabled(event.target.checked); setVideoIndex(0); }} /></label>
 
+          <span className="field-label">Watermark</span>
+          <div className="segmented">
+            <button type="button" className={watermark === true ? "selected" : ""} onClick={() => setWatermark(true)}>Default SCA</button>
+            <button type="button" className={watermark === false ? "selected" : ""} onClick={() => setWatermark(false)}>Off</button>
+            <button type="button" className={watermark === "SCA" ? "selected" : ""} onClick={() => setWatermark("SCA")}>Text SCA</button>
+          </div>
+
           <span className="field-label">Seeking</span>
           <label className="toggle-row"><span>Enable double-tap / double-click seek</span><input type="checkbox" checked={doubleTapSeek} onChange={(event) => setDoubleTapSeek(event.target.checked)} /></label>
           <div className="segmented">
@@ -170,6 +196,10 @@ export default function PlaygroundPage() {
             <button type="button" className="copy-button" onClick={() => void copyCode()}>{copied ? "Copied" : "Copy"}</button>
           </div>
           <pre className="code-preview"><code>{code}</code></pre>
+          <details className="watermark-examples">
+            <summary>Standalone watermark examples</summary>
+            <pre className="code-preview"><code>{WATERMARK_EXAMPLE}</code></pre>
+          </details>
         </aside>
       </div>
     </main>

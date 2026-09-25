@@ -1,9 +1,11 @@
 /* ---------- Player shell ---------- */
-.media-player{--player-accent:#ff0033;--thumb:10px;position:relative;width:100%;max-width:100%;overflow:hidden;isolation:isolate;background:#000;color:#fff;outline:none;font-family:var(--font-display),system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+.media-player{--player-accent:#ff0033;--player-progress-height:2px;--player-progress-hover-height:4px;--player-progress-thumb-size:9px;--player-progress-thumb-hover-size:12px;--player-progress-thumb-drag-size:14px;position:relative;width:100%;max-width:100%;overflow:hidden;isolation:isolate;background:#000;color:#fff;outline:none;font-family:var(--font-display),system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
 .media-player:focus-visible{box-shadow:0 0 0 2px var(--player-accent)}
 .media-player.controls-hidden.is-desktop{cursor:none}
 .media-element{display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#000}
 .media-player:not(.is-fullscreen){aspect-ratio:16/9}
+.player-watermark{position:absolute;z-index:3;max-width:calc(100% - 32px);overflow:hidden;color:#fff;font-size:.75rem;font-weight:600;line-height:1.2;opacity:.78;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.85);white-space:nowrap;pointer-events:none}
+.watermark-top-left{top:16px;left:16px}.watermark-top-right{top:16px;right:16px}.watermark-bottom-left{bottom:76px;left:16px}.watermark-bottom-right{right:16px;bottom:76px}
 
 /* Video surface: sits above the video, below every control. It never plays/pauses. */
 .tap-surface{position:absolute;inset:0;z-index:2;touch-action:manipulation}
@@ -20,35 +22,49 @@
 .control-row{display:flex;align-items:center;min-width:0;min-height:40px;gap:2px}
 .control-spacer{flex:1;min-width:4px}
 
-.player-button{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:#fff;cursor:pointer}
+.player-button{display:grid;place-items:center;flex:0 0 40px;width:40px;height:40px;padding:0;border:0;border-radius:6px;background:transparent;color:#fff;cursor:pointer;transition:background-color .14s ease,color .14s ease}
+.player-button svg{stroke-width:1.9}
 .player-button:hover,.player-button.is-active{background:rgba(255,255,255,.14)}
+.player-button:active{background:rgba(255,255,255,.2)}
 .player-button:focus-visible{outline:2px solid var(--player-accent);outline-offset:2px}
 .player-button:disabled{opacity:.35;cursor:default;pointer-events:none}
 .time-label{flex:0 0 auto;margin:0 10px;color:#fff;font:500 .78rem var(--font-mono),ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* ---------- Progress: single interactive range with a fixed track geometry. ---------- */
-.progress-wrap{position:relative;height:26px;margin:0 0 4px;touch-action:none;--pct:0;--buf:0}
-.progress-rail,.progress-buffered,.progress-played{position:absolute;left:0;top:50%;height:2px;border-radius:999px;pointer-events:none;transform:translateY(-50%)}
+.progress-wrap{position:relative;height:30px;margin:0 0 4px;touch-action:none;--pct:0;--buf:0}
+.progress-rail,.progress-buffered,.progress-played{position:absolute;left:0;top:50%;height:var(--player-progress-height);border-radius:999px;pointer-events:none;transform:translateY(-50%);transition:height .14s ease}
 .progress-rail{right:0;background:rgba(255,255,255,.3)}
 .progress-buffered{width:calc(var(--buf) * 100%);background:rgba(255,255,255,.7)}
 .progress-played{width:calc(var(--pct) * 100%);background:var(--player-accent)}
-.progress-range{position:absolute;inset:0;z-index:2;width:100%;height:26px;margin:0;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
+.progress-wrap:hover .progress-rail,.progress-wrap:hover .progress-buffered,.progress-wrap:hover .progress-played,.progress-wrap.is-dragging .progress-rail,.progress-wrap.is-dragging .progress-buffered,.progress-wrap.is-dragging .progress-played{height:var(--player-progress-hover-height)}
+.progress-range{position:absolute;inset:0;z-index:2;width:100%;height:30px;margin:0;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
 .progress-range:disabled{cursor:default}
-.progress-range::-webkit-slider-runnable-track{height:26px;background:transparent;border:0}
-.progress-range::-moz-range-track{height:26px;background:transparent;border:0}
-.progress-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:10px;margin-top:0;border:0;border-radius:50%;background:var(--player-accent);box-shadow:0 0 0 2px rgba(0,0,0,.16)}
-.progress-range::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:var(--player-accent);box-shadow:0 0 0 2px rgba(0,0,0,.16)}
+.progress-range::-webkit-slider-runnable-track{height:30px;background:transparent;border:0}
+.progress-range::-moz-range-track{height:30px;background:transparent;border:0}
+.progress-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:1px;height:1px;margin:0;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.progress-range::-moz-range-thumb{width:1px;height:1px;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.progress-thumb{position:absolute;z-index:3;top:50%;left:calc(var(--pct) * 100%);width:var(--player-progress-thumb-size);height:var(--player-progress-thumb-size);border-radius:50%;background:var(--player-accent);box-shadow:0 1px 4px rgba(0,0,0,.45);pointer-events:none;transform:translate(-50%,-50%);transition:width .14s ease,height .14s ease,box-shadow .14s ease}
+.progress-wrap:hover .progress-thumb{width:var(--player-progress-thumb-hover-size);height:var(--player-progress-thumb-hover-size)}
+.progress-wrap.is-dragging .progress-thumb{width:var(--player-progress-thumb-drag-size);height:var(--player-progress-thumb-drag-size);box-shadow:0 0 0 3px rgba(255,255,255,.18),0 1px 5px rgba(0,0,0,.5)}
+.progress-wrap:focus-within .progress-thumb{box-shadow:0 0 0 3px rgba(255,255,255,.2),0 1px 4px rgba(0,0,0,.45)}
 .progress-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:2px;border-radius:4px}
 
 /* ---------- Volume (desktop only; not rendered at all on touch devices) ---------- */
 .volume-group{display:flex;align-items:center;min-width:0}
-.volume-range{--range-fill:100%;width:72px;height:18px;margin:0 6px 0 2px;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
-.volume-range::-webkit-slider-runnable-track{height:2px;border-radius:2px;background:linear-gradient(to right,#fff var(--range-fill),rgba(255,255,255,.3) var(--range-fill))}
-.volume-range::-moz-range-track{height:2px;border-radius:2px;background:rgba(255,255,255,.3)}
-.volume-range::-moz-range-progress{height:2px;border-radius:2px;background:#fff}
-.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:10px;height:10px;margin-top:-4px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.18)}
-.volume-range::-moz-range-thumb{width:10px;height:10px;border:0;border-radius:50%;background:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.18)}
-.volume-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:3px;border-radius:4px}
+.volume-slider{position:relative;width:72px;height:32px;margin:0 6px 0 2px;--range-fill:100%}
+.volume-rail,.volume-played{position:absolute;top:50%;left:0;height:2px;border-radius:999px;pointer-events:none;transform:translateY(-50%);transition:height .14s ease}
+.volume-rail{right:0;background:rgba(255,255,255,.3)}.volume-played{width:var(--range-fill);background:var(--player-accent)}
+.volume-slider:hover .volume-rail,.volume-slider:hover .volume-played,.volume-slider.is-dragging .volume-rail,.volume-slider.is-dragging .volume-played{height:3px}
+.volume-range{position:absolute;inset:0;z-index:2;width:100%;height:32px;margin:0;padding:0;cursor:pointer;background:transparent;-webkit-appearance:none;appearance:none;outline:none}
+.volume-range::-webkit-slider-runnable-track{height:32px;background:transparent;border:0}
+.volume-range::-moz-range-track{height:32px;background:transparent;border:0}
+.volume-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:1px;height:1px;margin:0;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.volume-range::-moz-range-thumb{width:1px;height:1px;border:0;border-radius:50%;background:transparent;box-shadow:none}
+.volume-thumb{position:absolute;z-index:3;top:50%;left:var(--range-fill);width:var(--player-progress-thumb-size);height:var(--player-progress-thumb-size);border-radius:50%;background:var(--player-accent);box-shadow:0 1px 4px rgba(0,0,0,.45);pointer-events:none;transform:translate(-50%,-50%);transition:width .14s ease,height .14s ease,box-shadow .14s ease}
+.volume-slider:hover .volume-thumb{width:var(--player-progress-thumb-hover-size);height:var(--player-progress-thumb-hover-size)}
+.volume-slider.is-dragging .volume-thumb{width:var(--player-progress-thumb-drag-size);height:var(--player-progress-thumb-drag-size);box-shadow:0 0 0 3px rgba(255,255,255,.18),0 1px 5px rgba(0,0,0,.5)}
+.volume-slider:focus-within .volume-thumb{box-shadow:0 0 0 3px rgba(255,255,255,.2),0 1px 4px rgba(0,0,0,.45)}
+.volume-range:focus-visible{outline:2px solid var(--player-accent);outline-offset:2px;border-radius:4px}
 
 /* ---------- Settings menu ---------- */
 .player-menu-anchor{position:relative}
@@ -89,11 +105,8 @@
 .touch-bottom{display:flex;flex-direction:column;gap:0}
 .touch-meta{display:flex;align-items:center;justify-content:space-between}
 .touch-meta .time-label{margin:0 4px;font-size:.78rem}
-.is-touch .progress-wrap{height:22px;margin:0 2px}
-.is-touch .progress-rail,.is-touch .progress-buffered,.is-touch .progress-played{top:10px}
-.is-touch .progress-range,.is-touch .progress-range::-webkit-slider-runnable-track,.is-touch .progress-range::-moz-range-track{height:22px}
-.is-touch .progress-range::-webkit-slider-thumb{margin-top:6px;transform:scale(1)}
-.is-touch .progress-range::-moz-range-thumb{transform:scale(1)}
+.is-touch .progress-wrap{height:30px;margin:0 2px}
+.is-touch .progress-range,.is-touch .progress-range::-webkit-slider-runnable-track,.is-touch .progress-range::-moz-range-track{height:30px}
 .is-touch .player-button:hover{background:transparent}
 .is-touch .player-button.is-active{background:rgba(255,255,255,.14)}
 
@@ -106,4 +119,4 @@
 @keyframes player-spin{to{transform:rotate(360deg)}}
 @keyframes menu-in{from{opacity:0;transform:translateY(4px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes seek-pop{0%{opacity:0}15%,75%{opacity:1}100%{opacity:0}}
-@media (prefers-reduced-motion:reduce){.player-controls,.loader-ring,.seek-feedback,.progress-rail,.progress-buffered,.progress-played{animation:none;transition:none}}
+@media (prefers-reduced-motion:reduce){.player-controls,.loader-ring,.seek-feedback,.progress-rail,.progress-buffered,.progress-played,.progress-thumb,.volume-rail,.volume-played,.volume-thumb{animation:none;transition:none}}

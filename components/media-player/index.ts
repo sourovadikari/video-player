@@ -1,2 +1,2 @@
 export { MediaPlayer } from "./MediaPlayer";
-export type { CaptionTrack, MediaPlayerControls, MediaPlayerError, MediaPlayerProps, MediaPlayerRef, MediaPlayerState, MediaQuality, MediaSessionMetadata, MediaSource, MediaTrack, PlaylistVideoRecord, Video, VideoQuality, VideoSourceProvider } from "@/types/media-player";
+export type { CaptionTrack, MediaPlayerControls, MediaPlayerError, MediaPlayerProps, MediaPlayerRef, MediaPlayerState, MediaPlayerWatermarkPosition, MediaQuality, MediaSessionMetadata, MediaSource, MediaTrack, PlaylistVideoRecord, Video, VideoQuality, VideoSourceProvider } from "@/types/media-player";

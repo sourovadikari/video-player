@@ -6,10 +6,10 @@ import type { MediaPlayerControls, MediaPlayerError, MediaPlayerProps, MediaPlay
 
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const DEFAULT_QUALITY = "Default";
-const HIDE_DELAY = 2800;
+const HIDE_DELAY = 3000;
 const TOUCH_QUERY = "(hover: none) and (pointer: coarse)";
 const ICON_DESKTOP = 18; // visual icon size only; the button hit area stays 40px
-const ICON_TOUCH = 20;
+const ICON_TOUCH = 18;
 const ICON_MENU = 16;
 
 type LockableOrientation = ScreenOrientation & { lock?: (orientation: "landscape") => Promise<void>; unlock?: () => void };
@@ -65,7 +65,7 @@ function CaptionTrack({ track, onStatus }: { track: MediaTrack; onStatus: (src: 
 }
 
 export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function MediaPlayer({
-  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, autoNext = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, doubleTapSeek = true, landscapeOnFullscreen = true, hasPrevious = false, hasNext = false, onPrevious, onNext, mediaSession, className = "", accent = "#ff0033", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
+  src, poster, preload = "metadata", autoplay = false, muted = false, loop = false, autoNext = false, controls = true, captions = [], chapters, quality = [], playbackRate = true, playbackRates = PLAYBACK_RATES, seekStep = 10, keyboardShortcuts = true, doubleTapSeek = true, landscapeOnFullscreen = true, hasPrevious = false, hasNext = false, onPrevious, onNext, mediaSession, className = "", accent = "#ff0033", watermark = false, watermarkPosition = "top-left", onPlay, onPause, onEnded, onTimeUpdate, onProgress, onLoadedMetadata, onWaiting, onPlaying, onVolumeChange, onRateChange, onFullscreenChange, onError, onQualityChange, onCaptionChange, onSeek,
 }, ref) {
   const mediaRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<HTMLDivElement>(null);
@@ -79,6 +79,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
   const previousVolume = useRef(1);
   const resumeRef = useRef<{ time: number; playing: boolean } | null>(null);
+  const tapTimer = useRef<number | undefined>(undefined);
   const tapRef = useRef<{ time: number; x: number; chainUntil: number; side: "back" | "forward" | null }>({ time: 0, x: 0, chainUntil: 0, side: null });
   const latest = useRef({ onFullscreenChange, onCaptionChange, onSeek, onQualityChange, onProgress, onTimeUpdate });
   const isTouch = useIsTouch();
@@ -145,7 +146,11 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     hideTimer.current = window.setTimeout(() => { if (!holdRef.current) patch({ controlsVisible: false }); }, HIDE_DELAY);
   }, [patch]);
   const wake = useCallback(() => { hideAnchor.current = null; setUserHidden(false); patch({ controlsVisible: true }); scheduleHide(); }, [patch, scheduleHide]);
-  useEffect(() => () => { clearHideTimer(); if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current); }, []);
+  useEffect(() => () => {
+    clearHideTimer();
+    if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
+    if (tapTimer.current) window.clearTimeout(tapTimer.current);
+  }, []);
   const changeMenu = useCallback((next: "main" | "speed" | "quality" | null) => { setMenu(next); wake(); }, [wake]);
 
   // ---- media -> state (one function feeds every time/buffer event) ----
@@ -320,7 +325,23 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     const now = performance.now();
     const tap = tapRef.current;
     const isDouble = (now - tap.time < 300 && Math.abs(event.clientX - tap.x) < 80) || (now < tap.chainUntil && side === tap.side);
-    if (isDouble) { skip(side); wake(); tap.chainUntil = now + 500; tap.side = side; tap.time = 0; } else { tap.time = now; tap.x = event.clientX; toggleControls(event.clientX, event.clientY); }
+    if (isDouble) {
+      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+      skip(side);
+      wake();
+      tap.chainUntil = now + 500;
+      tap.side = side;
+      tap.time = 0;
+    } else {
+      tap.time = now;
+      tap.x = event.clientX;
+      if (tapTimer.current) window.clearTimeout(tapTimer.current);
+      tapTimer.current = window.setTimeout(() => {
+        toggleControls(event.clientX, event.clientY);
+        tap.time = 0;
+        tapTimer.current = undefined;
+      }, 300);
+    }
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -329,6 +350,8 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
     if ((event.key === " " || key === "k") && !isButton(event.target)) { event.preventDefault(); void togglePlay(); }
     else if (event.key === "ArrowLeft") seekBy(-seekStep);
     else if (event.key === "ArrowRight") seekBy(seekStep);
+    else if (event.key === "Home") { event.preventDefault(); seek(0); }
+    else if (event.key === "End") { event.preventDefault(); seek(duration); }
     else if (event.key === "ArrowUp") { event.preventDefault(); setVolume((mediaRef.current?.volume ?? 1) + 0.05); }
     else if (event.key === "ArrowDown") { event.preventDefault(); setVolume((mediaRef.current?.volume ?? 1) - 0.05); }
     else if (key === "m") toggleMute();
@@ -387,11 +410,12 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   const effectiveVolume = state.muted ? 0 : state.volume;
   const duration = safeDuration(state.duration);
   const currentTime = duration > 0 ? clamp(state.currentTime, 0, duration) : 0;
+  const watermarkText = typeof watermark === "string" ? watermark : watermark ? "SCA" : "";
 
   // ---- the ONE progress bar: rail (gray) + buffered (white) + played (accent) + the input's own thumb ----
   const progress = config.progress && (
     <div className={`progress-wrap ${dragging === "seek" ? "is-dragging" : ""}`} style={{ "--pct": duration > 0 ? currentTime / duration : 0, "--buf": state.buffered } as CSSProperties}>
-      <span className="progress-rail" /><span className="progress-buffered" /><span className="progress-played" />
+      <span className="progress-rail" /><span className="progress-buffered" /><span className="progress-played" /><span className="progress-thumb" aria-hidden="true" />
       <input className="progress-range" type="range" aria-label="Seek through video" aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`} min={0} max={duration || 1} step={0.1} value={currentTime} disabled={duration === 0}
         onPointerDown={() => setDragging("seek")} onChange={(event) => seek(Number(event.target.value))} />
     </div>
@@ -424,7 +448,7 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   );
   const captionsButton = config.captions && <IconButton label={state.captionsEnabled ? "Turn captions off" : "Turn captions on"} active={state.captionsEnabled} onClick={toggleCaptions}><Captions size={isTouch ? ICON_TOUCH : ICON_DESKTOP} /></IconButton>;
   const fullscreenButton = config.fullscreen && <IconButton label={state.fullscreen ? "Exit fullscreen" : "Fullscreen"} onClick={() => void (state.fullscreen ? exitFullscreen() : requestFullscreen())}>{state.fullscreen ? <Minimize size={isTouch ? ICON_TOUCH : ICON_DESKTOP} /> : <Maximize size={isTouch ? ICON_TOUCH : ICON_DESKTOP} />}</IconButton>;
-  const playPause = config.play && <IconButton label={state.playing ? "Pause" : "Play"} className="play-control" onClick={() => void togglePlay()}>{state.playing ? <Pause size={isTouch ? 26 : 20} /> : <Play size={isTouch ? 26 : 20} />}</IconButton>;
+  const playPause = config.play && <IconButton label={state.playing ? "Pause" : "Play"} className="play-control" onClick={() => void togglePlay()}>{state.playing ? <Pause size={isTouch ? 24 : 20} /> : <Play size={isTouch ? 24 : 20} />}</IconButton>;
   const time = <span className="time-label">{formatTime(currentTime)} / {formatTime(duration)}</span>;
 
   const desktopControls = (
@@ -437,8 +461,11 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
         {config.volume && (
           <div className="volume-group">
             <IconButton label={state.muted ? "Unmute" : "Mute"} onClick={toggleMute}><VolumeIcon size={ICON_DESKTOP} /></IconButton>
-            <input className="volume-range" type="range" aria-label="Volume" min={0} max={1} step={0.01} value={effectiveVolume} style={{ "--range-fill": `${effectiveVolume * 100}%` } as CSSProperties}
-              onPointerDown={() => setDragging("volume")} onChange={(event) => setVolume(Number(event.target.value))} />
+            <div className={`volume-slider ${dragging === "volume" ? "is-dragging" : ""}`} style={{ "--range-fill": `${effectiveVolume * 100}%` } as CSSProperties}>
+              <span className="volume-rail" /><span className="volume-played" /><span className="volume-thumb" aria-hidden="true" />
+              <input className="volume-range" type="range" aria-label="Volume" aria-valuetext={`${Math.round(effectiveVolume * 100)}%`} min={0} max={1} step={0.01} value={effectiveVolume}
+                onPointerDown={() => setDragging("volume")} onChange={(event) => setVolume(Number(event.target.value))} />
+            </div>
           </div>
         )}
         {time}
@@ -468,12 +495,15 @@ export const MediaPlayer = forwardRef<MediaPlayerRef, MediaPlayerProps>(function
   return (
     <div ref={playerRef} className={`media-player ${isTouch ? "is-touch" : "is-desktop"} ${controlsVisible ? "" : "controls-hidden"} ${state.fullscreen ? "is-fullscreen" : ""} ${className}`} style={{ "--player-accent": accent } as CSSProperties}
       tabIndex={0} onKeyDown={onKeyDown} onFocus={(event) => { if (event.target instanceof HTMLElement && event.target.matches(":focus-visible")) wake(); }}
+      onPointerEnter={(event) => { if (event.pointerType === "mouse" && !controlsVisible) wake(); }}
+      onPointerLeave={(event) => { if (event.pointerType === "mouse" && state.playing && !strongHold && controlsVisible) { clearHideTimer(); setUserHidden(true); patch({ controlsVisible: false }); } }}
       onPointerDown={(event) => { if (event.target !== surfaceRef.current) wake(); }}
       onPointerMove={(event) => { if (event.pointerType === "touch") return; const last = lastPointer.current; lastPointer.current = { x: event.clientX, y: event.clientY }; if (last && last.x === event.clientX && last.y === event.clientY) return; /* same-position moves (synthetic, pre-click) are not activity */ const anchor = hideAnchor.current; if (anchor && Math.hypot(event.clientX - anchor.x, event.clientY - anchor.y) < 10) return; wake(); }}>
       <video ref={mediaRef} className="media-element" src={sourceValue(activeSource)} preload={preload} autoPlay={autoplay} muted={muted} loop={loop} poster={started ? undefined : poster} playsInline {...mediaEvents}>
         {captions.map((track) => <CaptionTrack key={track.src} track={track} onStatus={onCaptionStatus} />)}
         {chapters && <track src={chapters.src} srcLang={chapters.srcLang} label={chapters.label} kind="chapters" />}
       </video>
+      {watermarkText && <span className={`player-watermark watermark-${watermarkPosition}`} aria-hidden="true">{watermarkText}</span>}
       {/* Video surface: never toggles playback. It only wakes the controls (via the container) and detects touch double-taps. */}
       <div ref={surfaceRef} className="tap-surface" onPointerUp={onSurfacePointerUp} />
       {seekFeedback && <div key={seekFeedback.id} className={`seek-feedback ${seekFeedback.side}`} aria-hidden="true">{seekFeedback.side === "back" ? <ChevronsLeft size={22} /> : <ChevronsRight size={22} />}<b>{seekStep} seconds</b></div>}
